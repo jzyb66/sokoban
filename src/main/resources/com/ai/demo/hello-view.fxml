@@ -6,51 +6,50 @@
 <?import javafx.scene.layout.BorderPane?>
 <?import javafx.scene.layout.GridPane?>
 <?import javafx.scene.layout.HBox?>
+<?import javafx.scene.layout.StackPane?>
 <?import javafx.scene.layout.VBox?>
 <?import javafx.scene.text.Font?>
 
-<BorderPane fx:id="rootPane" maxHeight="-Infinity" maxWidth="-Infinity" minHeight="-Infinity" minWidth="-Infinity" prefHeight="540.0" prefWidth="680.0" xmlns="http://javafx.com/javafx/17" xmlns:fx="http://javafx.com/fxml/1" fx:controller="com.ai.demo.HelloController">
-    <top>
-        <VBox alignment="CENTER" prefHeight="80.0" spacing="10.0">
-            <children>
-                <Label text="JavaFX 推箱子">
-                    <font>
-                        <Font name="System Bold" size="24.0" />
-                    </font>
-                </Label>
-                <HBox alignment="CENTER" spacing="20.0">
+<StackPane fx:id="rootPane" xmlns="http://javafx.com/javafx/17" xmlns:fx="http://javafx.com/fxml/1" fx:controller="com.ai.demo.HelloController">
+    <children>
+        <GridPane fx:id="gameGrid" alignment="CENTER" />
+
+        <BorderPane pickOnBounds="false">
+            <top>
+                <VBox alignment="TOP_LEFT" spacing="5.0" pickOnBounds="false">
+                    <StackPane.margin>
+                        <Insets left="10.0" top="10.0" />
+                    </StackPane.margin>
+                    <padding>
+                        <Insets bottom="5.0" left="8.0" right="8.0" top="5.0" />
+                    </padding>
+                    <style>
+                        -fx-background-color: rgba(0, 0, 0, 0.5);
+                        -fx-background-radius: 10;
+                    </style>
                     <children>
-                        <Label fx:id="levelLabel" text="关卡: 1">
-                            <font>
-                                <Font name="System Bold" size="16.0" />
-                            </font>
+                        <Label fx:id="levelLabel" text="关卡: 1" textFill="white">
+                            <font><Font name="System Bold" size="16.0" /></font>
                         </Label>
-                        <Label fx:id="movesLabel" text="步数: 0">
-                            <font>
-                                <Font name="System Bold" size="16.0" />
-                            </font>
+                        <Label fx:id="movesLabel" text="步数: 0" textFill="white">
+                            <font><Font name="System Bold" size="16.0" /></font>
                         </Label>
-                        <Label fx:id="timeLabel" text="时间: 0s">
-                            <font>
-                                <Font name="System Bold" size="16.0" />
-                            </font>
+                        <Label fx:id="timeLabel" text="时间: 0s" textFill="white">
+                            <font><Font name="System Bold" size="16.0" /></font>
                         </Label>
                     </children>
+                </VBox>
+            </top>
+            <bottom>
+                <HBox alignment="CENTER" prefHeight="60.0" spacing="15.0" BorderPane.alignment="CENTER">
+                    <children>
+                        <Button fx:id="resetButton" focusTraversable="false" mnemonicParsing="false" onAction="#resetGame" text="重置本关" />
+                        <Button fx:id="skipButton" focusTraversable="false" mnemonicParsing="false" onAction="#skipLevel" text="跳过关卡" />
+                        <Button fx:id="solveButton" focusTraversable="false" mnemonicParsing="false" onAction="#solveLevel" text="自动解关" />
+                        <Button fx:id="pauseButton" focusTraversable="false" mnemonicParsing="false" onAction="#pauseSolveAnimation" text="暂停解关" disable="true" />
+                    </children>
                 </HBox>
-            </children>
-        </VBox>
-    </top>
-    <center>
-        <GridPane fx:id="gameGrid" alignment="CENTER" BorderPane.alignment="CENTER" />
-    </center>
-    <bottom>
-        <HBox alignment="CENTER" prefHeight="60.0" spacing="15.0" BorderPane.alignment="CENTER">
-            <children>
-                <Button fx:id="resetButton" focusTraversable="false" mnemonicParsing="false" onAction="#resetGame" text="重置本关" />
-                <Button fx:id="skipButton" focusTraversable="false" mnemonicParsing="false" onAction="#skipLevel" text="跳过关卡" />
-                <Button fx:id="solveButton" focusTraversable="false" mnemonicParsing="false" onAction="#solveLevel" text="自动解关" />
-                <Button fx:id="pauseButton" focusTraversable="false" mnemonicParsing="false" onAction="#pauseSolveAnimation" text="暂停解关" disable="true" />
-            </children>
-        </HBox>
-    </bottom>
-</BorderPane>
+            </bottom>
+        </BorderPane>
+    </children>
+</StackPane>

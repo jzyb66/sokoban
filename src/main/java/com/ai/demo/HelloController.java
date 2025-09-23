@@ -13,8 +13,8 @@ import javafx.scene.control.Label;
 import javafx.scene.image.Image;
 import javafx.scene.image.ImageView;
 import javafx.scene.input.KeyCode;
-import javafx.scene.layout.BorderPane;
 import javafx.scene.layout.GridPane;
+import javafx.scene.layout.StackPane; // *** 这里是关键的修改 ***
 import javafx.util.Duration;
 
 import java.util.ArrayList;
@@ -24,7 +24,8 @@ import java.util.Objects;
 
 public class HelloController {
 
-    @FXML private BorderPane rootPane;
+    // *** 类型从 BorderPane 改为 StackPane ***
+    @FXML private StackPane rootPane;
     @FXML private GridPane gameGrid;
     @FXML private Label levelLabel;
     @FXML private Label movesLabel;
@@ -303,14 +304,12 @@ public class HelloController {
             protected List<KeyCode> call() {
                 SokobanSolver solver = new SokobanSolver(currentLevelLayout);
                 return solver.solve(currentMap, visitedCount -> {
-                    // 更新UI线程上的消息
-                    Platform.runLater(() -> movesLabel.setText("已检查: " + visitedCount + " 状态"));
+                    Platform.runLater(() -> movesLabel.setText("已搜索: " + visitedCount));
                 });
             }
         };
 
         solverTask.setOnSucceeded(event -> {
-            movesLabel.textProperty().unbind(); // 解除绑定
             List<KeyCode> solution = solverTask.getValue();
             if (solution == null) {
                 showAlert("求解失败", "此关卡状态太复杂或无解。");
@@ -318,13 +317,12 @@ public class HelloController {
                 movesLabel.setText("步数: " + moveCount);
                 timer.play();
             } else {
-                movesLabel.setText("找到解法，共 " + solution.size() + " 步");
+                movesLabel.setText("找到解法!");
                 animateSolution(solution);
             }
         });
 
         solverTask.setOnFailed(event -> {
-            movesLabel.textProperty().unbind();
             showAlert("错误", "求解过程中发生错误。");
             setControlsForManualPlay(true);
             movesLabel.setText("步数: " + moveCount);
@@ -332,7 +330,6 @@ public class HelloController {
         });
 
         solverTask.setOnCancelled(event -> {
-            movesLabel.textProperty().unbind();
             setControlsForManualPlay(true);
             movesLabel.setText("步数: " + moveCount);
         });
@@ -345,7 +342,7 @@ public class HelloController {
         setControlsForSolving();
 
         for (KeyCode move : solution) {
-            KeyFrame kf = new KeyFrame(Duration.millis(200), e -> {
+            KeyFrame kf = new KeyFrame(Duration.millis(150), e -> {
                 int[] playerPos = findPlayer();
                 if (playerPos != null) {
                     movePlayer(playerPos[0], playerPos[1], move);

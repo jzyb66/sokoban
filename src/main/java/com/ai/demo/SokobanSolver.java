@@ -6,23 +6,27 @@ import java.util.function.LongConsumer;
 
 public class SokobanSolver {
 
-    record Point(int row, int col) {}
+    record Point(int row, int col) implements Comparable<Point> {
+        @Override
+        public int compareTo(Point other) {
+            int rowCmp = Integer.compare(row, other.row);
+            return rowCmp != 0 ? rowCmp : Integer.compare(col, other.col);
+        }
+    }
 
     static class GameState {
-        final int playerRow;
-        final int playerCol;
-        final List<Point> boxes;
+        final Point playerPosition;
+        final TreeSet<Point> boxes; // 使用TreeSet保证箱子位置总是有序的
         final GameState parent;
-        final KeyCode move;
-        final int g;
+        final List<KeyCode> pathToThisState; // 从父状态到当前状态的完整玩家移动路径
+        final int g; // 推箱子次数
         int h;
 
-        GameState(int playerRow, int playerCol, List<Point> boxes, GameState parent, KeyCode move, int g) {
-            this.playerRow = playerRow;
-            this.playerCol = playerCol;
+        GameState(Point playerPosition, TreeSet<Point> boxes, GameState parent, List<KeyCode> pathToThisState, int g) {
+            this.playerPosition = playerPosition;
             this.boxes = boxes;
             this.parent = parent;
-            this.move = move;
+            this.pathToThisState = pathToThisState;
             this.g = g;
         }
 
@@ -35,101 +39,55 @@ public class SokobanSolver {
             if (this == o) return true;
             if (o == null || getClass() != o.getClass()) return false;
             GameState gameState = (GameState) o;
-            return playerRow == gameState.playerRow && playerCol == gameState.playerCol && boxes.equals(gameState.boxes);
+            // 状态由玩家和箱子位置共同决定，以处理玩家可达性问题
+            return playerPosition.equals(gameState.playerPosition) && boxes.equals(gameState.boxes);
         }
 
         @Override
         public int hashCode() {
-            return Objects.hash(playerRow, playerCol, boxes);
+            return Objects.hash(playerPosition, boxes);
         }
     }
 
     private final int[][] levelLayout;
     private final List<Point> goals = new ArrayList<>();
     private final boolean[][] deadSquares;
+    private final int rows;
+    private final int cols;
 
     public SokobanSolver(int[][] levelLayout) {
         this.levelLayout = levelLayout;
-        for (int i = 0; i < levelLayout.length; i++) {
-            for (int j = 0; j < levelLayout[i].length; j++) {
-                if (levelLayout[i][j] == 4) { // 4 is a goal
-                    goals.add(new Point(i, j));
-                }
+        this.rows = levelLayout.length;
+        this.cols = Arrays.stream(levelLayout).mapToInt(r -> r.length).max().orElse(0);
+        for (int i = 0; i < rows; i++) {
+            for (int j = 0; j < cols; j++) {
+                if (levelLayout[i][j] == 4) goals.add(new Point(i, j));
             }
         }
-        // 预先计算所有死点位置
         this.deadSquares = precomputeDeadlocks();
     }
 
-    // 预计算死锁位置 (高级功能)
     private boolean[][] precomputeDeadlocks() {
-        int rows = levelLayout.length;
-        int cols = Arrays.stream(levelLayout).mapToInt(r -> r.length).max().orElse(0);
         boolean[][] dead = new boolean[rows][cols];
-
         for (int r = 0; r < rows; r++) {
             for (int c = 0; c < cols; c++) {
-                if (levelLayout[r][c] == 1) continue; // 墙不是死点
-                if (goals.contains(new Point(r, c))) continue; // 目标点不是死点
-
-                // 检查角落死锁
+                if (levelLayout[r][c] == 1 || goals.contains(new Point(r, c))) continue;
                 boolean upWall = (r == 0) || levelLayout[r - 1][c] == 1;
                 boolean downWall = (r == rows - 1) || levelLayout[r + 1][c] == 1;
                 boolean leftWall = (c == 0) || levelLayout[r][c - 1] == 1;
                 boolean rightWall = (c == cols - 1) || levelLayout[r][c + 1] == 1;
-                if ((upWall || downWall) && (leftWall || rightWall)) {
-                    dead[r][c] = true;
-                }
-            }
-        }
-
-        // 检查墙边死锁 (更复杂的情况)
-        for (int r = 0; r < rows; r++) {
-            for (int c = 0; c < cols; c++) {
-                if (!dead[r][c]) {
-                    // 从每个非死角点开始，看是否能把箱子推到所有目标点
-                    if (isWallDeadlock(r, c, dead)) {
-                        dead[r][c] = true;
-                    }
-                }
+                if ((upWall || downWall) && (leftWall || rightWall)) dead[r][c] = true;
             }
         }
         return dead;
     }
 
-    private boolean isWallDeadlock(int row, int col, boolean[][] dead) {
-        // 检查水平墙边
-        boolean stuckHorizontal = true;
-        for (int c = 0; c < dead[0].length; c++) {
-            if (!dead[row][c] && !goals.contains(new Point(row, c))) {
-                stuckHorizontal = false;
-                break;
-            }
-        }
-        if (stuckHorizontal) return true;
-
-        // 检查垂直墙边
-        boolean stuckVertical = true;
-        for (int r = 0; r < dead.length; r++) {
-            if (!dead[r][col] && !goals.contains(new Point(r, col))) {
-                stuckVertical = false;
-                break;
-            }
-        }
-        return stuckVertical;
-    }
-
-
-    // A* 算法，现在使用 progressUpdater 来报告进度
     public List<KeyCode> solve(int[][] initialMap, LongConsumer progressUpdater) {
-        int[] playerPos = findPlayer(initialMap);
-        if (playerPos == null) return null;
+        Point playerPos = findPlayer(initialMap);
+        TreeSet<Point> initialBoxes = findBoxes(initialMap);
 
-        List<Point> initialBoxes = findBoxes(initialMap);
-        initialBoxes.sort(Comparator.comparingInt(p -> p.row * 1000 + p.col));
-
-        GameState initialState = new GameState(playerPos[0], playerPos[1], initialBoxes, null, null, 0);
-        initialState.h = calculateHeuristic(initialBoxes);
+        GameState initialState = new GameState(playerPos, initialBoxes, null, new ArrayList<>(), 0);
+        initialState.h = calculateHeuristic(new ArrayList<>(initialBoxes));
 
         PriorityQueue<GameState> openSet = new PriorityQueue<>(Comparator.comparingInt(GameState::getF));
         Set<GameState> closedSet = new HashSet<>();
@@ -138,115 +96,137 @@ public class SokobanSolver {
         while (!openSet.isEmpty()) {
             GameState currentState = openSet.poll();
 
-            if (closedSet.size() % 2000 == 0) { // 每处理2000个状态，更新一次UI
-                progressUpdater.accept((long)closedSet.size());
+            if (closedSet.size() % 200 == 0) {
+                progressUpdater.accept((long) closedSet.size());
             }
 
             if (isWinState(currentState.boxes)) {
                 return reconstructPath(currentState);
             }
 
-            closedSet.add(currentState);
+            if (!closedSet.add(currentState)) continue;
 
-            for (KeyCode move : Arrays.asList(KeyCode.UP, KeyCode.DOWN, KeyCode.LEFT, KeyCode.RIGHT)) {
-                int dRow = 0, dCol = 0;
-                switch (move) {
-                    case UP: dRow = -1; break;
-                    case DOWN: dRow = 1; break;
-                    case LEFT: dCol = -1; break;
-                    case RIGHT: dCol = 1; break;
-                }
+            // 对每个箱子，尝试朝四个方向推
+            for (Point box : currentState.boxes) {
+                for (KeyCode move : new KeyCode[]{KeyCode.UP, KeyCode.DOWN, KeyCode.LEFT, KeyCode.RIGHT}) {
+                    int dRow = 0, dCol = 0;
+                    if (move == KeyCode.UP) dRow = -1; else if (move == KeyCode.DOWN) dRow = 1;
+                    else if (move == KeyCode.LEFT) dCol = -1; else if (move == KeyCode.RIGHT) dCol = 1;
 
-                int nextPlayerRow = currentState.playerRow + dRow;
-                int nextPlayerCol = currentState.playerCol + dCol;
+                    Point newBoxPos = new Point(box.row + dRow, box.col + dCol);
+                    Point playerPushPos = new Point(box.row - dRow, box.col - dCol);
 
-                if (!isValid(nextPlayerRow, nextPlayerCol) || levelLayout[nextPlayerRow][nextPlayerCol] == 1) continue;
+                    if (!isValid(newBoxPos.row, newBoxPos.col) || levelLayout[newBoxPos.row][newBoxPos.col] == 1 || currentState.boxes.contains(newBoxPos) || deadSquares[newBoxPos.row][newBoxPos.col]) {
+                        continue;
+                    }
 
-                Point nextPlayerPoint = new Point(nextPlayerRow, nextPlayerCol);
-                GameState nextState;
+                    List<KeyCode> playerPath = getPlayerPath(currentState.playerPosition, playerPushPos, currentState.boxes);
+                    if (playerPath != null) {
+                        TreeSet<Point> nextBoxes = new TreeSet<>(currentState.boxes);
+                        nextBoxes.remove(box);
+                        nextBoxes.add(newBoxPos);
 
-                if (currentState.boxes.contains(nextPlayerPoint)) {
-                    int nextBoxRow = nextPlayerRow + dRow;
-                    int nextBoxCol = nextPlayerCol + dCol;
+                        List<KeyCode> fullPathToNext = new ArrayList<>(playerPath);
+                        fullPathToNext.add(move);
 
-                    if (isValid(nextBoxRow, nextBoxCol) && levelLayout[nextBoxRow][nextBoxCol] != 1 && !currentState.boxes.contains(new Point(nextBoxRow, nextBoxCol))) {
-                        // 使用预计算的死锁信息
-                        if (deadSquares[nextBoxRow][nextBoxCol]) {
-                            continue;
-                        }
-
-                        List<Point> nextBoxes = new ArrayList<>(currentState.boxes);
-                        nextBoxes.remove(nextPlayerPoint);
-                        nextBoxes.add(new Point(nextBoxRow, nextBoxCol));
-                        nextBoxes.sort(Comparator.comparingInt(p -> p.row * 1000 + p.col));
-
-                        nextState = new GameState(nextPlayerRow, nextPlayerCol, nextBoxes, currentState, move, currentState.g + 1);
-                        nextState.h = calculateHeuristic(nextBoxes);
-
-                        if (!closedSet.contains(nextState) && !openSet.contains(nextState)) {
+                        GameState nextState = new GameState(box, nextBoxes, currentState, fullPathToNext, currentState.g + 1);
+                        nextState.h = calculateHeuristic(new ArrayList<>(nextBoxes));
+                        if (!closedSet.contains(nextState)) {
                             openSet.add(nextState);
                         }
-                    }
-                } else {
-                    nextState = new GameState(nextPlayerRow, nextPlayerCol, new ArrayList<>(currentState.boxes), currentState, move, currentState.g + 1);
-                    nextState.h = currentState.h;
-                    if (!closedSet.contains(nextState) && !openSet.contains(nextState)) {
-                        openSet.add(nextState);
                     }
                 }
             }
         }
         return null;
+    }
+
+    private List<KeyCode> getPlayerPath(Point start, Point end, Set<Point> boxes) {
+        if (start.equals(end)) return new ArrayList<>();
+
+        Queue<List<Point>> queue = new LinkedList<>();
+        queue.add(Collections.singletonList(start));
+        Set<Point> visited = new HashSet<>();
+        visited.add(start);
+
+        while (!queue.isEmpty()) {
+            List<Point> path = queue.poll();
+            Point current = path.get(path.size() - 1);
+            if (current.equals(end)) return convertPathToKeyCodes(path);
+
+            for (int[] dir : new int[][]{{-1, 0}, {1, 0}, {0, -1}, {0, 1}}) {
+                Point next = new Point(current.row + dir[0], current.col + dir[1]);
+                if (isValid(next.row, next.col) && levelLayout[next.row][next.col] != 1 && !boxes.contains(next) && !visited.contains(next)) {
+                    visited.add(next);
+                    List<Point> newPath = new ArrayList<>(path);
+                    newPath.add(next);
+                    queue.add(newPath);
+                }
+            }
+        }
+        return null;
+    }
+
+    private List<KeyCode> convertPathToKeyCodes(List<Point> path) {
+        List<KeyCode> moves = new ArrayList<>();
+        for (int i = 0; i < path.size() - 1; i++) {
+            Point from = path.get(i);
+            Point to = path.get(i + 1);
+            if (to.row < from.row) moves.add(KeyCode.UP);
+            else if (to.row > from.row) moves.add(KeyCode.DOWN);
+            else if (to.col < from.col) moves.add(KeyCode.LEFT);
+            else if (to.col > from.col) moves.add(KeyCode.RIGHT);
+        }
+        return moves;
+    }
+
+    private List<KeyCode> reconstructPath(GameState finalState) {
+        LinkedList<KeyCode> fullPath = new LinkedList<>();
+        GameState current = finalState;
+        while (current != null && current.parent != null) {
+            fullPath.addAll(0, current.pathToThisState);
+            current = current.parent;
+        }
+        return fullPath;
     }
 
     private int calculateHeuristic(List<Point> boxes) {
         int totalDistance = 0;
+        List<Point> unmatchedGoals = new ArrayList<>(goals);
         for (Point box : boxes) {
             int minDistance = Integer.MAX_VALUE;
-            for (Point goal : goals) {
-                minDistance = Math.min(minDistance, Math.abs(box.row - goal.row) + Math.abs(box.col - goal.col));
+            Point bestGoal = null;
+            for (Point goal : unmatchedGoals) {
+                int dist = Math.abs(box.row - goal.row) + Math.abs(box.col - goal.col);
+                if (dist < minDistance) {
+                    minDistance = dist;
+                    bestGoal = goal;
+                }
             }
-            totalDistance += minDistance;
+            if (bestGoal != null) {
+                totalDistance += minDistance;
+                unmatchedGoals.remove(bestGoal);
+            }
         }
         return totalDistance;
     }
 
-    private boolean isWinState(List<Point> boxes) {
+    private boolean isWinState(Set<Point> boxes) {
         return new HashSet<>(boxes).equals(new HashSet<>(goals));
     }
 
-    private List<KeyCode> reconstructPath(GameState state) {
-        List<KeyCode> path = new ArrayList<>();
-        while (state.parent != null) {
-            path.add(state.move);
-            state = state.parent;
-        }
-        Collections.reverse(path);
-        return path;
-    }
-
-    private int[] findPlayer(int[][] map) {
-        for (int i = 0; i < map.length; i++) {
-            for (int j = 0; j < map[i].length; j++) {
-                if (map[i][j] == 2) return new int[]{i, j};
-            }
-        }
+    private Point findPlayer(int[][] map) {
+        for (int i = 0; i < map.length; i++) for (int j = 0; j < map[i].length; j++) if (map[i][j] == 2) return new Point(i, j);
         return null;
     }
 
-    private List<Point> findBoxes(int[][] map) {
-        List<Point> boxes = new ArrayList<>();
-        for (int i = 0; i < map.length; i++) {
-            for (int j = 0; j < map[i].length; j++) {
-                if (map[i][j] == 3) {
-                    boxes.add(new Point(i, j));
-                }
-            }
-        }
+    private TreeSet<Point> findBoxes(int[][] map) {
+        TreeSet<Point> boxes = new TreeSet<>();
+        for (int i = 0; i < map.length; i++) for (int j = 0; j < map[i].length; j++) if (map[i][j] == 3) boxes.add(new Point(i, j));
         return boxes;
     }
 
     private boolean isValid(int row, int col) {
-        return row >= 0 && row < levelLayout.length && col >= 0 && col < levelLayout[row].length;
+        return row >= 0 && row < this.rows && col >= 0 && col < this.cols;
     }
 }
