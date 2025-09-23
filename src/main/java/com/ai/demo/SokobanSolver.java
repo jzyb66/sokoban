@@ -16,10 +16,10 @@ public class SokobanSolver {
 
     static class GameState {
         final Point playerPosition;
-        final TreeSet<Point> boxes; // 使用TreeSet保证箱子位置总是有序的
+        final TreeSet<Point> boxes;
         final GameState parent;
-        final List<KeyCode> pathToThisState; // 从父状态到当前状态的完整玩家移动路径
-        final int g; // 推箱子次数
+        final List<KeyCode> pathToThisState;
+        final int g;
         int h;
 
         GameState(Point playerPosition, TreeSet<Point> boxes, GameState parent, List<KeyCode> pathToThisState, int g) {
@@ -39,7 +39,6 @@ public class SokobanSolver {
             if (this == o) return true;
             if (o == null || getClass() != o.getClass()) return false;
             GameState gameState = (GameState) o;
-            // 状态由玩家和箱子位置共同决定，以处理玩家可达性问题
             return playerPosition.equals(gameState.playerPosition) && boxes.equals(gameState.boxes);
         }
 
@@ -50,7 +49,7 @@ public class SokobanSolver {
     }
 
     private final int[][] levelLayout;
-    private final List<Point> goals = new ArrayList<>();
+    private final List<Point> goals;
     private final boolean[][] deadSquares;
     private final int rows;
     private final int cols;
@@ -59,35 +58,74 @@ public class SokobanSolver {
         this.levelLayout = levelLayout;
         this.rows = levelLayout.length;
         this.cols = Arrays.stream(levelLayout).mapToInt(r -> r.length).max().orElse(0);
+        this.goals = new ArrayList<>();
         for (int i = 0; i < rows; i++) {
             for (int j = 0; j < cols; j++) {
                 if (levelLayout[i][j] == 4) goals.add(new Point(i, j));
             }
         }
-        this.deadSquares = precomputeDeadlocks();
+        this.deadSquares = precomputeSimpleDeadlocks();
     }
 
-    private boolean[][] precomputeDeadlocks() {
+    private boolean[][] precomputeSimpleDeadlocks() {
         boolean[][] dead = new boolean[rows][cols];
         for (int r = 0; r < rows; r++) {
             for (int c = 0; c < cols; c++) {
-                if (levelLayout[r][c] == 1 || goals.contains(new Point(r, c))) continue;
+                if (goals.contains(new Point(r, c))) continue;
+                if (levelLayout[r][c] == 1) continue;
+
                 boolean upWall = (r == 0) || levelLayout[r - 1][c] == 1;
                 boolean downWall = (r == rows - 1) || levelLayout[r + 1][c] == 1;
                 boolean leftWall = (c == 0) || levelLayout[r][c - 1] == 1;
                 boolean rightWall = (c == cols - 1) || levelLayout[r][c + 1] == 1;
-                if ((upWall || downWall) && (leftWall || rightWall)) dead[r][c] = true;
+                if ((upWall || downWall) && (leftWall || rightWall)) {
+                    dead[r][c] = true;
+                }
             }
         }
         return dead;
     }
+
+    /**
+     * The final and most effective deadlock detection.
+     * It checks if a box pushed to a non-goal square is now permanently stuck.
+     */
+    private boolean isDeadlocked(Point pushedBox, TreeSet<Point> boxes) {
+        // If the box is on a goal, it's never a deadlock.
+        if (goals.contains(pushedBox)) {
+            return false;
+        }
+
+        // Check simple corner deadlocks first (very fast)
+        if (deadSquares[pushedBox.row][pushedBox.col]) {
+            return true;
+        }
+
+        // The ultimate check: A box is deadlocked if it cannot move vertically AND cannot move horizontally.
+        int r = pushedBox.row;
+        int c = pushedBox.col;
+
+        // Check vertical mobility
+        boolean canMoveUp = (r > 0) && (levelLayout[r - 1][c] != 1) && !boxes.contains(new Point(r - 1, c));
+        boolean canMoveDown = (r < rows - 1) && (levelLayout[r + 1][c] != 1) && !boxes.contains(new Point(r + 1, c));
+        boolean verticallyStuck = !canMoveUp && !canMoveDown;
+
+        // Check horizontal mobility
+        boolean canMoveLeft = (c > 0) && (levelLayout[r][c - 1] != 1) && !boxes.contains(new Point(r, c - 1));
+        boolean canMoveRight = (c < cols - 1) && (levelLayout[r][c + 1] != 1) && !boxes.contains(new Point(r, c + 1));
+        boolean horizontallyStuck = !canMoveLeft && !canMoveRight;
+
+        // If it's stuck in both directions, it's a deadlock.
+        return verticallyStuck && horizontallyStuck;
+    }
+
 
     public List<KeyCode> solve(int[][] initialMap, LongConsumer progressUpdater) {
         Point playerPos = findPlayer(initialMap);
         TreeSet<Point> initialBoxes = findBoxes(initialMap);
 
         GameState initialState = new GameState(playerPos, initialBoxes, null, new ArrayList<>(), 0);
-        initialState.h = calculateHeuristic(new ArrayList<>(initialBoxes));
+        initialState.h = calculateHeuristic(initialBoxes);
 
         PriorityQueue<GameState> openSet = new PriorityQueue<>(Comparator.comparingInt(GameState::getF));
         Set<GameState> closedSet = new HashSet<>();
@@ -96,17 +134,10 @@ public class SokobanSolver {
         while (!openSet.isEmpty()) {
             GameState currentState = openSet.poll();
 
-            if (closedSet.size() % 200 == 0) {
-                progressUpdater.accept((long) closedSet.size());
-            }
-
-            if (isWinState(currentState.boxes)) {
-                return reconstructPath(currentState);
-            }
-
+            if (closedSet.size() % 1000 == 0) progressUpdater.accept((long) closedSet.size());
+            if (isWinState(currentState.boxes)) return reconstructPath(currentState);
             if (!closedSet.add(currentState)) continue;
 
-            // 对每个箱子，尝试朝四个方向推
             for (Point box : currentState.boxes) {
                 for (KeyCode move : new KeyCode[]{KeyCode.UP, KeyCode.DOWN, KeyCode.LEFT, KeyCode.RIGHT}) {
                     int dRow = 0, dCol = 0;
@@ -116,7 +147,7 @@ public class SokobanSolver {
                     Point newBoxPos = new Point(box.row + dRow, box.col + dCol);
                     Point playerPushPos = new Point(box.row - dRow, box.col - dCol);
 
-                    if (!isValid(newBoxPos.row, newBoxPos.col) || levelLayout[newBoxPos.row][newBoxPos.col] == 1 || currentState.boxes.contains(newBoxPos) || deadSquares[newBoxPos.row][newBoxPos.col]) {
+                    if (!isValid(newBoxPos.row, newBoxPos.col) || levelLayout[newBoxPos.row][newBoxPos.col] == 1 || currentState.boxes.contains(newBoxPos)) {
                         continue;
                     }
 
@@ -126,11 +157,15 @@ public class SokobanSolver {
                         nextBoxes.remove(box);
                         nextBoxes.add(newBoxPos);
 
+                        if (isDeadlocked(newBoxPos, nextBoxes)) {
+                            continue;
+                        }
+
                         List<KeyCode> fullPathToNext = new ArrayList<>(playerPath);
                         fullPathToNext.add(move);
 
                         GameState nextState = new GameState(box, nextBoxes, currentState, fullPathToNext, currentState.g + 1);
-                        nextState.h = calculateHeuristic(new ArrayList<>(nextBoxes));
+                        nextState.h = calculateHeuristic(nextBoxes);
                         if (!closedSet.contains(nextState)) {
                             openSet.add(nextState);
                         }
@@ -142,6 +177,7 @@ public class SokobanSolver {
     }
 
     private List<KeyCode> getPlayerPath(Point start, Point end, Set<Point> boxes) {
+        if (!isValid(end.row, end.col) || levelLayout[end.row][end.col] == 1) return null;
         if (start.equals(end)) return new ArrayList<>();
 
         Queue<List<Point>> queue = new LinkedList<>();
@@ -190,7 +226,7 @@ public class SokobanSolver {
         return fullPath;
     }
 
-    private int calculateHeuristic(List<Point> boxes) {
+    private int calculateHeuristic(TreeSet<Point> boxes) {
         int totalDistance = 0;
         List<Point> unmatchedGoals = new ArrayList<>(goals);
         for (Point box : boxes) {

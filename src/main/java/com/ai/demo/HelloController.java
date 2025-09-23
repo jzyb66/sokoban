@@ -14,17 +14,17 @@ import javafx.scene.image.Image;
 import javafx.scene.image.ImageView;
 import javafx.scene.input.KeyCode;
 import javafx.scene.layout.GridPane;
-import javafx.scene.layout.StackPane; // *** 这里是关键的修改 ***
+import javafx.scene.layout.StackPane;
 import javafx.util.Duration;
 
 import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.List;
 import java.util.Objects;
+import java.util.concurrent.atomic.AtomicInteger;
 
 public class HelloController {
 
-    // *** 类型从 BorderPane 改为 StackPane ***
     @FXML private StackPane rootPane;
     @FXML private GridPane gameGrid;
     @FXML private Label levelLabel;
@@ -38,6 +38,7 @@ public class HelloController {
     private List<int[][]> levels = new ArrayList<>();
     private int currentLevelIndex = 0;
     private int moveCount = 0;
+    private boolean isLevelComplete = false; // Flag to prevent actions after win
 
     private int[][] currentMap;
     private int[][] currentLevelLayout;
@@ -80,7 +81,7 @@ public class HelloController {
             playerRightImage = new Image(Objects.requireNonNull(getClass().getResourceAsStream("/images/player_right.png")));
         } catch (Exception e) {
             e.printStackTrace();
-            showAlert("错误", "图片加载失败！请检查images文件夹下的图片文件。");
+            showAlertAndThen("错误", "图片加载失败！请检查images文件夹下的图片文件。", null);
         }
     }
 
@@ -90,6 +91,8 @@ public class HelloController {
 
     private void loadLevel(int levelIndex) {
         if (levelIndex < 0 || levelIndex >= levels.size()) return;
+
+        isLevelComplete = false; // Reset the flag for the new level
         currentLevelIndex = levelIndex;
         levelLabel.setText("关卡: " + (currentLevelIndex + 1));
         moveCount = 0;
@@ -129,7 +132,9 @@ public class HelloController {
         }
         drawMap();
         setControlsForManualPlay(true);
-        if (rootPane != null) rootPane.requestFocus();
+        if (rootPane != null) {
+            rootPane.requestFocus();
+        }
     }
 
     @FXML
@@ -144,8 +149,7 @@ public class HelloController {
         if (currentLevelIndex < levels.size() - 1) {
             loadLevel(currentLevelIndex + 1);
         } else {
-            showAlert("提示", "已经是最后一关了！将返回第一关。");
-            loadLevel(0);
+            showAlertAndThen("提示", "已经是最后一关了！将返回第一关。", () -> loadLevel(0));
         }
     }
 
@@ -196,9 +200,14 @@ public class HelloController {
                 }
             }
         }
+        if(rootPane.getScene() != null && rootPane.getScene().getWindow() != null) {
+            rootPane.getScene().getWindow().sizeToScene();
+        }
     }
 
     public void handleKeyPress(KeyCode code) {
+        if (isLevelComplete) return; // Ignore key presses after winning
+
         if (solutionAnimation != null && solutionAnimation.getStatus() == Animation.Status.PAUSED) {
             stopSolverAndAnimation();
             setControlsForManualPlay(true);
@@ -274,23 +283,33 @@ public class HelloController {
             }
         }
 
-        timer.stop();
+        // *** THIS IS THE FINAL LOGIC FOR THE WIN CONDITION ***
+        isLevelComplete = true; // Set flag to true to stop further moves
+        timer.stop(); // Stop the timer immediately
+        rootPane.setOnKeyPressed(null); // Disable keyboard input
+
         if (currentLevelIndex < levels.size() - 1) {
-            showAlert("恭喜过关!", "你完成了第 " + (currentLevelIndex + 1) + " 关！");
-            loadLevel(currentLevelIndex + 1);
+            showAlertAndThen("恭喜过关!", "你完成了第 " + (currentLevelIndex + 1) + " 关！", () -> {
+                loadLevel(currentLevelIndex + 1);
+            });
         } else {
-            showAlert("恭喜!", "你已经完成了所有关卡！");
-            loadLevel(0);
+            showAlertAndThen("恭喜!", "你已经完成了所有关卡！", () -> {
+                loadLevel(0);
+            });
         }
     }
 
-    private void showAlert(String title, String message) {
+    private void showAlertAndThen(String title, String message, Runnable onOk) {
         Platform.runLater(() -> {
             Alert alert = new Alert(Alert.AlertType.INFORMATION);
             alert.setTitle(title);
             alert.setHeaderText(null);
             alert.setContentText(message);
-            alert.showAndWait();
+            alert.showAndWait(); // This blocks until the user clicks OK
+
+            if (onOk != null) {
+                onOk.run();
+            }
         });
     }
 
@@ -298,6 +317,7 @@ public class HelloController {
     private void solveLevel() {
         setControlsForSolving();
         timer.stop();
+        movesLabel.setText("正在搜索解法...");
 
         solverTask = new Task<>() {
             @Override
@@ -312,7 +332,7 @@ public class HelloController {
         solverTask.setOnSucceeded(event -> {
             List<KeyCode> solution = solverTask.getValue();
             if (solution == null) {
-                showAlert("求解失败", "此关卡状态太复杂或无解。");
+                showAlertAndThen("求解失败", "此关卡状态太复杂或无解。", null);
                 setControlsForManualPlay(true);
                 movesLabel.setText("步数: " + moveCount);
                 timer.play();
@@ -323,15 +343,11 @@ public class HelloController {
         });
 
         solverTask.setOnFailed(event -> {
-            showAlert("错误", "求解过程中发生错误。");
+            showAlertAndThen("错误", "求解过程中发生错误: " + event.getSource().getException().getMessage(), null);
             setControlsForManualPlay(true);
             movesLabel.setText("步数: " + moveCount);
             timer.play();
-        });
-
-        solverTask.setOnCancelled(event -> {
-            setControlsForManualPlay(true);
-            movesLabel.setText("步数: " + moveCount);
+            event.getSource().getException().printStackTrace();
         });
 
         new Thread(solverTask).start();
@@ -341,11 +357,14 @@ public class HelloController {
         solutionAnimation = new SequentialTransition();
         setControlsForSolving();
 
+        final AtomicInteger animationStepCounter = new AtomicInteger(0);
+
         for (KeyCode move : solution) {
-            KeyFrame kf = new KeyFrame(Duration.millis(150), e -> {
+            KeyFrame kf = new KeyFrame(Duration.millis(100), e -> {
                 int[] playerPos = findPlayer();
                 if (playerPos != null) {
                     movePlayer(playerPos[0], playerPos[1], move);
+                    movesLabel.setText("步数: " + animationStepCounter.incrementAndGet());
                     drawMap();
                 }
             });
