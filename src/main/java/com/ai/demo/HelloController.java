@@ -28,7 +28,6 @@ public class HelloController {
     private int[][] currentMap;         // 保存游戏当前状态
     private int[][] currentLevelLayout; // 仅保存关卡的墙体和目标点布局
 
-    // 使用原始图片资源
     private Image wallImage, playerImage, boxImage, goalImage, groundImage, boxOnGoalImage;
 
     @FXML
@@ -40,7 +39,6 @@ public class HelloController {
 
     private void loadImages() {
         try {
-            // *** 使用您项目最开始的图片命名 ***
             wallImage = new Image(Objects.requireNonNull(getClass().getResourceAsStream("/images/wall.png")));
             playerImage = new Image(Objects.requireNonNull(getClass().getResourceAsStream("/images/player.png")));
             boxImage = new Image(Objects.requireNonNull(getClass().getResourceAsStream("/images/box.png")));
@@ -48,14 +46,17 @@ public class HelloController {
             groundImage = new Image(Objects.requireNonNull(getClass().getResourceAsStream("/images/ground.png")));
             boxOnGoalImage = new Image(Objects.requireNonNull(getClass().getResourceAsStream("/images/box_on_goal.png")));
         } catch (NullPointerException e) {
-            showAlert("严重错误", "一个或多个图片资源加载失败！\n请确保 `resources/images` 文件夹存在，并且包含以下文件:\nwall.png, player.png, box.png, goal.png, ground.png, box_on_goal.png");
+            showAlert("严重错误", "一个或多个图片资源加载失败！\n请确保 `resources/images` 文件夹包含了所有必需的图片。");
             e.printStackTrace();
         }
     }
 
     private void createLevels() {
         // 使用 shunyue1320/sokoban 项目的关卡数据
-        // 0:空地, 1:墙, 2:玩家(原4), 3:箱子, 4:目标点(原2), 5:箱子在目标点上
+        // 原JS数据: 1:墙, 2:目标点, 3:箱子, 4:人物, 5:箱子在目标点
+        // Java映射:  1:墙, 4:目标点, 3:箱子, 2:人物, 5:箱子在目标点
+
+        // 关卡 1
         levels.add(new int[][]{
                 {0,0,0,0,0,0,1,1,1,0,0,0,0,0,0,0},
                 {0,0,0,0,0,0,1,4,1,0,0,0,0,0,0,0},
@@ -66,10 +67,10 @@ public class HelloController {
                 {0,0,0,0,0,0,0,1,4,1,0,0,0,0,0,0},
                 {0,0,0,0,0,0,0,1,1,1,0,0,0,0,0,0}
         });
-
+        // 关卡 2
         levels.add(new int[][]{
                 {0,0,0,0,1,1,1,1,1,0,0,0,0,0,0,0},
-                {0,0,0,0,1,2,0,0,1,0,0,0,0,0,0,0}, // JS版这里是4(人物)，但目标点是2，这里改为2
+                {0,0,0,0,1,2,0,0,1,0,0,0,0,0,0,0},
                 {0,0,0,0,1,0,3,3,1,0,1,1,1,0,0,0},
                 {0,0,0,0,1,0,3,0,1,0,1,4,1,0,0,0},
                 {0,0,0,0,1,1,1,0,1,1,1,4,1,0,0,0},
@@ -78,7 +79,97 @@ public class HelloController {
                 {0,0,0,0,0,1,0,0,0,1,1,1,1,0,0,0},
                 {0,0,0,0,0,1,1,1,1,1,0,0,0,0,0,0}
         });
+        // 关卡 3
+        levels.add(new int[][]{
+                {0,0,0,0,1,1,1,1,1,1,1,0,0,0,0,0},
+                {0,0,0,0,1,0,0,0,0,0,1,1,1,0,0,0},
+                {0,0,0,1,1,3,1,1,1,0,0,0,1,0,0,0},
+                {0,0,0,1,0,2,0,3,0,0,3,0,1,0,0,0},
+                {0,0,0,1,0,4,4,1,0,3,0,1,1,0,0,0},
+                {0,0,0,1,1,4,4,1,0,0,0,1,0,0,0,0},
+                {0,0,0,0,1,1,1,1,1,1,1,1,0,0,0,0}
+        });
+        // 关卡 4
+        levels.add(new int[][]{
+                {0,0,0,0,0,1,1,1,1,0,0,0,0,0,0,0},
+                {0,0,0,0,1,1,0,0,1,0,0,0,0,0,0,0},
+                {0,0,0,0,1,2,3,0,1,0,0,0,0,0,0,0},
+                {0,0,0,0,1,1,3,0,1,1,0,0,0,0,0,0},
+                {0,0,0,0,1,1,0,3,0,1,0,0,0,0,0,0},
+                {0,0,0,0,1,4,3,0,0,1,0,0,0,0,0,0},
+                {0,0,0,0,1,4,4,5,4,1,0,0,0,0,0,0}, // 包含一个值为5的格子
+                {0,0,0,0,1,1,1,1,1,1,0,0,0,0,0,0}
+        });
+        // 关卡 5
+        levels.add(new int[][]{
+                {0,0,0,0,0,1,1,1,1,1,0,0,0,0,0,0},
+                {0,0,0,0,0,1,2,0,1,1,1,0,0,0,0,0}, // JS版这里是4(人物)
+                {0,0,0,0,0,1,0,3,0,0,1,0,0,0,0,0},
+                {0,0,0,0,1,1,1,0,1,0,1,1,0,0,0,0},
+                {0,0,0,0,1,4,1,0,1,0,0,1,0,0,0,0},
+                {0,0,0,0,1,4,3,0,0,1,0,1,0,0,0,0},
+                {0,0,0,0,1,4,0,0,0,3,0,1,0,0,0,0},
+                {0,0,0,0,1,1,1,1,1,1,1,1,0,0,0,0}
+        });
+        // 关卡 6
+        levels.add(new int[][]{
+                {0,0,0,0,1,1,1,1,1,1,1,0,0,0,0,0},
+                {0,1,1,1,1,0,0,0,0,0,1,0,0,0,0,0},
+                {0,1,0,0,0,4,1,1,1,0,1,0,0,0,0,0},
+                {0,1,0,1,0,1,0,0,0,0,1,1,0,0,0,0},
+                {0,1,0,1,0,3,0,3,1,4,0,1,0,0,0,0},
+                {0,1,0,1,0,0,5,0,0,1,0,1,0,0,0,0},
+                {0,1,0,4,1,3,0,3,0,1,0,1,0,0,0,0},
+                {0,1,1,0,0,0,0,1,0,1,0,1,1,1,0,0},
+                {0,0,1,0,1,1,1,4,0,0,0,0,2,1,0,0}, // JS版这里是4
+                {0,0,1,0,0,0,0,0,1,1,0,0,0,1,0,0},
+                {0,0,1,1,1,1,1,1,1,1,1,1,1,1,0,0}
+        });
+        // 关卡 7
+        levels.add(new int[][]{
+                {0,0,0,0,0,0,1,1,1,1,1,1,1,0,0,0},
+                {0,0,0,0,0,1,1,0,0,1,0,2,1,0,0,0}, // JS版这里是4
+                {0,0,0,0,0,1,0,0,0,1,0,0,1,0,0,0},
+                {0,0,0,0,0,1,3,0,3,0,3,0,1,0,0,0},
+                {0,0,0,0,0,1,0,3,1,1,0,0,1,0,0,0},
+                {0,0,0,1,1,1,0,3,0,1,0,1,1,0,0,0},
+                {0,0,0,1,4,4,4,4,4,0,0,1,0,0,0,0},
+                {0,0,0,1,1,1,1,1,1,1,1,1,0,0,0,0}
+        });
+        // 关卡 8
+        levels.add(new int[][]{
+                {0,0,0,0,0,0,1,1,1,1,1,1,0,0,0,0},
+                {0,0,0,0,1,1,1,0,0,0,0,1,0,0,0,0},
+                {0,0,0,1,1,4,0,3,1,1,0,1,1,0,0,0},
+                {0,0,0,1,4,4,3,0,3,0,0,2,1,0,0,0}, // JS版这里是4
+                {0,0,0,1,4,4,0,3,0,3,0,1,1,0,0,0},
+                {0,0,0,1,1,1,1,1,1,0,0,1,0,0,0,0},
+                {0,0,0,0,0,0,0,0,1,1,1,1,0,0,0,0}
+        });
+        // 关卡 9
+        levels.add(new int[][]{
+                {0,0,0,1,1,1,1,1,1,1,1,1,0,0,0,0},
+                {0,0,0,1,0,0,1,1,0,0,0,1,0,0,0,0},
+                {0,0,0,1,0,0,0,3,0,0,0,1,0,0,0,0},
+                {0,0,0,1,3,0,1,1,1,0,3,1,0,0,0,0},
+                {0,0,0,1,0,1,4,4,4,1,0,1,0,0,0,0},
+                {0,0,1,1,0,1,4,4,4,1,0,1,1,0,0,0},
+                {0,0,1,0,3,0,0,3,0,0,3,0,1,0,0,0},
+                {0,0,1,0,0,0,0,0,1,0,2,0,1,0,0,0}, // JS版这里是4
+                {0,0,1,1,1,1,1,1,1,1,1,1,1,0,0,0}
+        });
+        // 关卡 10
+        levels.add(new int[][]{
+                {0,0,0,0,0,0,1,1,1,1,1,1,0,0,0,0},
+                {0,0,0,0,0,0,1,0,0,0,0,1,0,0,0,0},
+                {0,0,0,0,1,1,1,3,3,3,0,1,0,0,0,0},
+                {0,0,0,0,1,2,0,3,4,4,0,1,0,0,0,0},
+                {0,0,0,0,1,0,3,4,4,4,1,1,0,0,0,0},
+                {0,0,0,0,1,1,1,1,0,0,1,0,0,0,0,0},
+                {0,0,0,0,0,0,0,1,1,1,1,0,0,0,0,0}
+        });
     }
+
 
     private void loadLevel(int levelIndex) {
         if (levelIndex < 0 || levelIndex >= levels.size()) return;
@@ -86,15 +177,21 @@ public class HelloController {
         levelLabel.setText("关卡: " + (currentLevelIndex + 1));
 
         int[][] originalLevel = levels.get(levelIndex);
-        currentLevelLayout = new int[originalLevel.length][];
-        currentMap = new int[originalLevel.length][];
+
+        // 获取最大宽度，以处理不规则的二维数组
+        int maxWidth = 0;
+        for (int[] row : originalLevel) {
+            if (row.length > maxWidth) {
+                maxWidth = row.length;
+            }
+        }
+
+        currentLevelLayout = new int[originalLevel.length][maxWidth];
+        currentMap = new int[originalLevel.length][maxWidth];
 
         for (int i = 0; i < originalLevel.length; i++) {
-            int[] row = originalLevel[i];
-            currentLevelLayout[i] = new int[row.length];
-            currentMap[i] = new int[row.length];
-            for (int j = 0; j < row.length; j++) {
-                int tile = row[j];
+            for (int j = 0; j < originalLevel[i].length; j++) {
+                int tile = originalLevel[i][j];
                 // 关键处理：分离布局和物体
                 if (tile == 5) { // 箱子在目标点上
                     currentLevelLayout[i][j] = 4; // 布局层是目标点
@@ -104,7 +201,7 @@ public class HelloController {
                     currentMap[i][j] = tile;      // 游戏状态层是物体
                 } else { // 墙、目标点、空地
                     currentLevelLayout[i][j] = tile;
-                    currentMap[i][j] = 0; // 游戏状态层默认是空地
+                    currentMap[i][j] = 0; // 游戏状态层默认是空地 (上面没有物体)
                 }
             }
         }
