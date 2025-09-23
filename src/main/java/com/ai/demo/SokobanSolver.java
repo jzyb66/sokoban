@@ -87,38 +87,67 @@ public class SokobanSolver {
     }
 
     /**
-     * The final and most effective deadlock detection.
-     * It checks if a box pushed to a non-goal square is now permanently stuck.
+     * The ultimate deadlock detection inspired by the provided project.
+     * It checks for simple deadlocks and then performs a reachability analysis
+     * for any box that isn't on a goal, which robustly detects all complex deadlocks.
      */
-    private boolean isDeadlocked(Point pushedBox, TreeSet<Point> boxes) {
-        // If the box is on a goal, it's never a deadlock.
-        if (goals.contains(pushedBox)) {
-            return false;
+    private boolean isDeadlocked(TreeSet<Point> boxes) {
+        // Create a grid representing all fixed obstacles (walls and boxes on goals)
+        boolean[][] fixedObstacles = new boolean[rows][cols];
+        for (int r = 0; r < rows; r++) {
+            for (int c = 0; c < cols; c++) {
+                if (levelLayout[r][c] == 1) {
+                    fixedObstacles[r][c] = true;
+                }
+            }
         }
 
-        // Check simple corner deadlocks first (very fast)
-        if (deadSquares[pushedBox.row][pushedBox.col]) {
-            return true;
+        List<Point> movableBoxes = new ArrayList<>();
+        for (Point box : boxes) {
+            if (goals.contains(box)) {
+                fixedObstacles[box.row][box.col] = true; // Treat boxes on goals as walls for other boxes
+            } else {
+                movableBoxes.add(box);
+            }
         }
 
-        // The ultimate check: A box is deadlocked if it cannot move vertically AND cannot move horizontally.
-        int r = pushedBox.row;
-        int c = pushedBox.col;
+        // Check each movable box for deadlocks
+        for (Point box : movableBoxes) {
+            if (deadSquares[box.row][box.col]) return true;
 
-        // Check vertical mobility
-        boolean canMoveUp = (r > 0) && (levelLayout[r - 1][c] != 1) && !boxes.contains(new Point(r - 1, c));
-        boolean canMoveDown = (r < rows - 1) && (levelLayout[r + 1][c] != 1) && !boxes.contains(new Point(r + 1, c));
-        boolean verticallyStuck = !canMoveUp && !canMoveDown;
+            // Perform a flood fill (BFS) to see which squares this box can reach
+            Set<Point> reachable = new HashSet<>();
+            Queue<Point> queue = new LinkedList<>();
 
-        // Check horizontal mobility
-        boolean canMoveLeft = (c > 0) && (levelLayout[r][c - 1] != 1) && !boxes.contains(new Point(r, c - 1));
-        boolean canMoveRight = (c < cols - 1) && (levelLayout[r][c + 1] != 1) && !boxes.contains(new Point(r, c + 1));
-        boolean horizontallyStuck = !canMoveLeft && !canMoveRight;
+            queue.add(box);
+            reachable.add(box);
 
-        // If it's stuck in both directions, it's a deadlock.
-        return verticallyStuck && horizontallyStuck;
+            while(!queue.isEmpty()){
+                Point current = queue.poll();
+                // Check UP/DOWN push
+                if(current.row > 0 && !fixedObstacles[current.row-1][current.col] && current.row < rows -1 && !fixedObstacles[current.row+1][current.col]){
+                    if(reachable.add(new Point(current.row-1, current.col))) queue.add(new Point(current.row-1, current.col));
+                    if(reachable.add(new Point(current.row+1, current.col))) queue.add(new Point(current.row+1, current.col));
+                }
+                // Check LEFT/RIGHT push
+                if(current.col > 0 && !fixedObstacles[current.row][current.col-1] && current.col < cols -1 && !fixedObstacles[current.row][current.col+1]){
+                    if(reachable.add(new Point(current.row, current.col-1))) queue.add(new Point(current.row, current.col-1));
+                    if(reachable.add(new Point(current.row, current.col+1))) queue.add(new Point(current.row, current.col+1));
+                }
+            }
+
+            // If any goal is unreachable by this box, it's a deadlock
+            boolean canReachAnyGoal = false;
+            for(Point goal : goals){
+                if(reachable.contains(goal)){
+                    canReachAnyGoal = true;
+                    break;
+                }
+            }
+            if(!canReachAnyGoal) return true;
+        }
+        return false;
     }
-
 
     public List<KeyCode> solve(int[][] initialMap, LongConsumer progressUpdater) {
         Point playerPos = findPlayer(initialMap);
@@ -157,7 +186,7 @@ public class SokobanSolver {
                         nextBoxes.remove(box);
                         nextBoxes.add(newBoxPos);
 
-                        if (isDeadlocked(newBoxPos, nextBoxes)) {
+                        if (isDeadlocked(nextBoxes)) {
                             continue;
                         }
 
