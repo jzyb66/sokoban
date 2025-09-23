@@ -28,14 +28,16 @@ public class HelloController {
     @FXML private Button resetButton;
     @FXML private Button skipButton;
 
-    private final List<int[][]> levels = new ArrayList<>();
+    private List<int[][]> levels = new ArrayList<>();
     private int currentLevelIndex = 0;
     private int moveCount = 0;
 
     private int[][] currentMap;
     private int[][] currentLevelLayout;
 
-    private Image wallImage, playerImage, boxImage, goalImage, groundImage, boxOnGoalImage;
+    private Image wallImage, boxImage, goalImage, groundImage, boxOnGoalImage;
+    private Image playerUpImage, playerDownImage, playerLeftImage, playerRightImage;
+    private Image currentPlayerImage; // 当前角色应该显示的图像
 
     private Timeline timer;
     private int timeSeconds;
@@ -48,7 +50,6 @@ public class HelloController {
             if (this == o) return true;
             if (o == null || getClass() != o.getClass()) return false;
             GameState gameState = (GameState) o;
-            // 比较玩家位置和箱子位置列表
             return playerRow == gameState.playerRow && playerCol == gameState.playerCol && boxes.equals(gameState.boxes);
         }
 
@@ -79,24 +80,26 @@ public class HelloController {
     private void loadImages() {
         try {
             wallImage = new Image(Objects.requireNonNull(getClass().getResourceAsStream("/images/wall.png")));
-            playerImage = new Image(Objects.requireNonNull(getClass().getResourceAsStream("/images/player.png")));
             boxImage = new Image(Objects.requireNonNull(getClass().getResourceAsStream("/images/box.png")));
             goalImage = new Image(Objects.requireNonNull(getClass().getResourceAsStream("/images/goal.png")));
             groundImage = new Image(Objects.requireNonNull(getClass().getResourceAsStream("/images/ground.png")));
             boxOnGoalImage = new Image(Objects.requireNonNull(getClass().getResourceAsStream("/images/box_on_goal.png")));
+
+            // 加载4个方向的小人图像
+            playerUpImage = new Image(Objects.requireNonNull(getClass().getResourceAsStream("/images/player_up.png")));
+            playerDownImage = new Image(Objects.requireNonNull(getClass().getResourceAsStream("/images/player_down.png")));
+            playerLeftImage = new Image(Objects.requireNonNull(getClass().getResourceAsStream("/images/player_left.png")));
+            playerRightImage = new Image(Objects.requireNonNull(getClass().getResourceAsStream("/images/player_right.png")));
+
         } catch (Exception e) {
-            showAlert("错误", "图片加载失败！");
+            e.printStackTrace();
+            showAlert("错误", "图片加载失败！请检查images文件夹下的图片文件。");
         }
     }
 
     private void createLevels() {
-        // ... (关卡数据和之前一样，为节省篇幅省略，实际代码中应包含所有关卡)
-        levels.add(new int[][]{
-                {0,0,0,0,0,0,1,1,1,0,0,0},{0,0,0,0,0,0,1,4,1,0,0,0},{0,0,0,0,0,0,1,0,1,1,1,1},{0,0,0,0,1,1,1,3,0,3,4,1},{0,0,0,0,1,4,0,3,2,1,1,1},{0,0,0,0,1,1,1,1,3,1,0,0},{0,0,0,0,0,0,0,1,4,1,0,0},{0,0,0,0,0,0,0,1,1,1,0,0}
-        });
-        levels.add(new int[][]{
-                {0,0,0,0,1,1,1,1,1,0},{0,0,0,0,1,2,0,0,1,0},{0,0,0,0,1,0,3,3,1,0},{0,0,0,0,1,0,3,0,1,0},{0,0,0,0,1,1,1,0,1,1},{0,0,0,0,0,1,1,0,0,0},{0,0,0,0,0,1,0,0,0,1},{0,0,0,0,0,1,0,0,0,1},{0,0,0,0,0,1,1,1,1,1}
-        });
+        // 从 LevelData 类加载关卡数据
+        levels = LevelData.getLevels();
     }
 
     private void loadLevel(int levelIndex) {
@@ -112,23 +115,43 @@ public class HelloController {
 
         if (solutionAnimation != null) solutionAnimation.stop();
 
+        // 初始时，角色朝向下方
+        currentPlayerImage = playerDownImage;
+
         int[][] originalLevel = levels.get(levelIndex);
-        int maxWidth = Arrays.stream(originalLevel).mapToInt(row -> row.length).max().orElse(0);
+        int numRows = originalLevel.length;
+        int maxWidth = 0;
+        for (int[] row : originalLevel) {
+            if (row.length > maxWidth) {
+                maxWidth = row.length;
+            }
+        }
 
-        currentLevelLayout = new int[originalLevel.length][maxWidth];
-        currentMap = new int[originalLevel.length][maxWidth];
+        currentLevelLayout = new int[numRows][maxWidth];
+        currentMap = new int[numRows][maxWidth];
 
-        for (int i = 0; i < originalLevel.length; i++) {
-            for (int j = 0; j < originalLevel[i].length; j++) {
-                int tile = originalLevel[i][j];
-                if (tile == 5) {
-                    currentLevelLayout[i][j] = 4;
-                    currentMap[i][j] = 3;
-                } else if (tile == 2 || tile == 3) {
-                    currentLevelLayout[i][j] = 0;
-                    currentMap[i][j] = tile;
+        for (int i = 0; i < numRows; i++) {
+            for (int j = 0; j < maxWidth; j++) {
+                if (j < originalLevel[i].length) {
+                    int tile = originalLevel[i][j];
+                    if (tile == 5) { // 箱子在目标点上
+                        currentLevelLayout[i][j] = 4; // 布局是目标点
+                        currentMap[i][j] = 3;         // 地图上是箱子
+                    } else if (tile == 4) { // 玩家
+                        currentLevelLayout[i][j] = 0; // 布局是地面
+                        currentMap[i][j] = 2;         // 地图上是玩家
+                    } else if (tile == 2) { // 目标点
+                        currentLevelLayout[i][j] = 4; // 布局是目标点
+                        currentMap[i][j] = 0;
+                    } else if (tile == 3) { // 箱子
+                        currentLevelLayout[i][j] = 0;
+                        currentMap[i][j] = 3;
+                    } else { // 墙或地面
+                        currentLevelLayout[i][j] = tile;
+                        currentMap[i][j] = 0;
+                    }
                 } else {
-                    currentLevelLayout[i][j] = tile;
+                    currentLevelLayout[i][j] = 0;
                     currentMap[i][j] = 0;
                 }
             }
@@ -156,7 +179,6 @@ public class HelloController {
     }
 
     private void setControlsDisabled(boolean disabled) {
-        // *** 关键修复：添加空值检查 ***
         if (solveButton != null) solveButton.setDisable(disabled);
         if (resetButton != null) resetButton.setDisable(disabled);
         if (skipButton != null) skipButton.setDisable(disabled);
@@ -188,16 +210,16 @@ public class HelloController {
                 }
 
                 int objectTile = currentMap[row][col];
-                if (objectTile == 2 || objectTile == 3) {
-                    ImageView topView = new ImageView();
-                    topView.setFitWidth(40);
-                    topView.setFitHeight(40);
-                    if (objectTile == 2) {
-                        topView.setImage(playerImage);
-                    } else {
-                        topView.setImage(currentLevelLayout[row][col] == 4 ? boxOnGoalImage : boxImage);
-                    }
-                    gameGrid.add(topView, col, row);
+                if (objectTile == 2) { // 玩家
+                    ImageView playerView = new ImageView(currentPlayerImage);
+                    playerView.setFitWidth(40);
+                    playerView.setFitHeight(40);
+                    gameGrid.add(playerView, col, row);
+                } else if (objectTile == 3) { // 箱子
+                    ImageView boxView = new ImageView(currentLevelLayout[row][col] == 4 ? boxOnGoalImage : boxImage);
+                    boxView.setFitWidth(40);
+                    boxView.setFitHeight(40);
+                    gameGrid.add(boxView, col, row);
                 }
             }
         }
@@ -220,10 +242,22 @@ public class HelloController {
     private boolean movePlayer(int playerRow, int playerCol, KeyCode code) {
         int dRow = 0, dCol = 0;
         switch (code) {
-            case UP: dRow = -1; break;
-            case DOWN: dRow = 1; break;
-            case LEFT: dCol = -1; break;
-            case RIGHT: dCol = 1; break;
+            case UP:
+                dRow = -1;
+                currentPlayerImage = playerUpImage;
+                break;
+            case DOWN:
+                dRow = 1;
+                currentPlayerImage = playerDownImage;
+                break;
+            case LEFT:
+                dCol = -1;
+                currentPlayerImage = playerLeftImage;
+                break;
+            case RIGHT:
+                dCol = 1;
+                currentPlayerImage = playerRightImage;
+                break;
         }
 
         int targetRow = playerRow + dRow;
@@ -232,15 +266,15 @@ public class HelloController {
         if (!isValid(targetRow, targetCol) || currentLevelLayout[targetRow][targetCol] == 1) return false;
 
         int targetObject = currentMap[targetRow][targetCol];
-        if (targetObject == 0) {
+        if (targetObject == 0) { // 前方是空地
             move(playerRow, playerCol, targetRow, targetCol, 2);
             return true;
-        } else if (targetObject == 3) {
+        } else if (targetObject == 3) { // 前方是箱子
             int boxTargetRow = targetRow + dRow;
             int boxTargetCol = targetCol + dCol;
             if (isValid(boxTargetRow, boxTargetCol) && currentLevelLayout[boxTargetRow][boxTargetCol] != 1 && currentMap[boxTargetRow][boxTargetCol] == 0) {
-                move(targetRow, targetCol, boxTargetRow, boxTargetCol, 3);
-                move(playerRow, playerCol, targetRow, targetCol, 2);
+                move(targetRow, targetCol, boxTargetRow, boxTargetCol, 3); // 移动箱子
+                move(playerRow, playerCol, targetRow, targetCol, 2); // 移动玩家
                 return true;
             }
         }
@@ -269,7 +303,7 @@ public class HelloController {
         for (int i = 0; i < currentLevelLayout.length; i++) {
             for (int j = 0; j < currentLevelLayout[i].length; j++) {
                 if (currentLevelLayout[i][j] == 4 && currentMap[i][j] != 3) {
-                    return;
+                    return; // 只要有一个目标点上没箱子，就没赢
                 }
             }
         }
@@ -327,7 +361,6 @@ public class HelloController {
                 }
             }
         }
-        // 对箱子排序，确保GameState的哈希值唯一性
         initialBoxes.sort(Comparator.comparingInt(p -> p.row * 100 + p.col));
 
         GameState initialState = new GameState(playerPos[0], playerPos[1], initialBoxes, null, null);
@@ -340,7 +373,6 @@ public class HelloController {
         while (!queue.isEmpty()) {
             GameState currentState = queue.poll();
 
-            // 检查胜利
             if (isWinState(currentState.boxes)) {
                 List<KeyCode> path = new ArrayList<>();
                 GameState state = currentState;
@@ -352,7 +384,6 @@ public class HelloController {
                 return path;
             }
 
-            // 尝试移动
             for (KeyCode move : Arrays.asList(KeyCode.UP, KeyCode.DOWN, KeyCode.LEFT, KeyCode.RIGHT)) {
                 int dRow = 0, dCol = 0;
                 switch (move) {
@@ -368,7 +399,7 @@ public class HelloController {
                 if (!isValid(nextPlayerRow, nextPlayerCol) || currentLevelLayout[nextPlayerRow][nextPlayerCol] == 1) continue;
 
                 Point nextPlayerPoint = new Point(nextPlayerRow, nextPlayerCol);
-                if (currentState.boxes.contains(nextPlayerPoint)) { // 推箱子
+                if (currentState.boxes.contains(nextPlayerPoint)) {
                     int nextBoxRow = nextPlayerRow + dRow;
                     int nextBoxCol = nextPlayerCol + dCol;
                     Point nextBoxPoint = new Point(nextBoxRow, nextBoxCol);
@@ -384,9 +415,8 @@ public class HelloController {
                             visited.add(nextState);
                         }
                     }
-                } else { // 仅移动玩家
+                } else {
                     GameState nextState = new GameState(nextPlayerRow, nextPlayerCol, new ArrayList<>(currentState.boxes), currentState, move);
-                    // 注意：只移动玩家时，箱子位置不变，可能产生大量重复状态，但为了逻辑完整性保留
                     if (!visited.contains(nextState)) {
                         queue.add(nextState);
                         visited.add(nextState);
@@ -394,7 +424,7 @@ public class HelloController {
                 }
             }
         }
-        return null; // 未找到解法
+        return null;
     }
 
     private boolean isWinState(List<Point> boxes) {
@@ -423,7 +453,6 @@ public class HelloController {
         }
 
         solutionAnimation.setOnFinished(e -> {
-            // 动画结束后，状态可能不是胜利状态（如果求解器不完美），所以重新检查
             checkWinCondition();
         });
 
