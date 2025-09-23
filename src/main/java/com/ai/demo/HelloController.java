@@ -1,9 +1,11 @@
 package com.ai.demo;
 
+import javafx.animation.Animation;
 import javafx.animation.KeyFrame;
 import javafx.animation.SequentialTransition;
 import javafx.animation.Timeline;
 import javafx.application.Platform;
+import javafx.concurrent.Task;
 import javafx.fxml.FXML;
 import javafx.scene.control.Alert;
 import javafx.scene.control.Button;
@@ -15,7 +17,10 @@ import javafx.scene.layout.BorderPane;
 import javafx.scene.layout.GridPane;
 import javafx.util.Duration;
 
-import java.util.*;
+import java.util.ArrayList;
+import java.util.Arrays;
+import java.util.List;
+import java.util.Objects;
 
 public class HelloController {
 
@@ -27,6 +32,7 @@ public class HelloController {
     @FXML private Button solveButton;
     @FXML private Button resetButton;
     @FXML private Button skipButton;
+    @FXML private Button pauseButton;
 
     private List<int[][]> levels = new ArrayList<>();
     private int currentLevelIndex = 0;
@@ -37,29 +43,12 @@ public class HelloController {
 
     private Image wallImage, boxImage, goalImage, groundImage, boxOnGoalImage;
     private Image playerUpImage, playerDownImage, playerLeftImage, playerRightImage;
-    private Image currentPlayerImage; // 当前角色应该显示的图像
+    private Image currentPlayerImage;
 
     private Timeline timer;
     private int timeSeconds;
     private SequentialTransition solutionAnimation;
-
-    // --- 内部类定义 (GameState, Point) ---
-    private record GameState(int playerRow, int playerCol, List<Point> boxes, GameState parent, KeyCode move) {
-        @Override
-        public boolean equals(Object o) {
-            if (this == o) return true;
-            if (o == null || getClass() != o.getClass()) return false;
-            GameState gameState = (GameState) o;
-            return playerRow == gameState.playerRow && playerCol == gameState.playerCol && boxes.equals(gameState.boxes);
-        }
-
-        @Override
-        public int hashCode() {
-            return Objects.hash(playerRow, playerCol, boxes);
-        }
-    }
-
-    private record Point(int row, int col) {}
+    private Task<List<KeyCode>> solverTask;
 
     @FXML
     public void initialize() {
@@ -84,13 +73,10 @@ public class HelloController {
             goalImage = new Image(Objects.requireNonNull(getClass().getResourceAsStream("/images/goal.png")));
             groundImage = new Image(Objects.requireNonNull(getClass().getResourceAsStream("/images/ground.png")));
             boxOnGoalImage = new Image(Objects.requireNonNull(getClass().getResourceAsStream("/images/box_on_goal.png")));
-
-            // 加载4个方向的小人图像
             playerUpImage = new Image(Objects.requireNonNull(getClass().getResourceAsStream("/images/player_up.png")));
             playerDownImage = new Image(Objects.requireNonNull(getClass().getResourceAsStream("/images/player_down.png")));
             playerLeftImage = new Image(Objects.requireNonNull(getClass().getResourceAsStream("/images/player_left.png")));
             playerRightImage = new Image(Objects.requireNonNull(getClass().getResourceAsStream("/images/player_right.png")));
-
         } catch (Exception e) {
             e.printStackTrace();
             showAlert("错误", "图片加载失败！请检查images文件夹下的图片文件。");
@@ -98,7 +84,6 @@ public class HelloController {
     }
 
     private void createLevels() {
-        // 从 LevelData 类加载关卡数据
         levels = LevelData.getLevels();
     }
 
@@ -106,27 +91,18 @@ public class HelloController {
         if (levelIndex < 0 || levelIndex >= levels.size()) return;
         currentLevelIndex = levelIndex;
         levelLabel.setText("关卡: " + (currentLevelIndex + 1));
-
         moveCount = 0;
         movesLabel.setText("步数: 0");
         timeSeconds = 0;
         timeLabel.setText("时间: 0s");
-        timer.playFromStart();
+        if (timer != null) timer.playFromStart();
 
-        if (solutionAnimation != null) solutionAnimation.stop();
+        stopSolverAndAnimation();
 
-        // 初始时，角色朝向下方
         currentPlayerImage = playerDownImage;
-
         int[][] originalLevel = levels.get(levelIndex);
         int numRows = originalLevel.length;
-        int maxWidth = 0;
-        for (int[] row : originalLevel) {
-            if (row.length > maxWidth) {
-                maxWidth = row.length;
-            }
-        }
-
+        int maxWidth = Arrays.stream(originalLevel).mapToInt(row -> row.length).max().orElse(0);
         currentLevelLayout = new int[numRows][maxWidth];
         currentMap = new int[numRows][maxWidth];
 
@@ -134,30 +110,24 @@ public class HelloController {
             for (int j = 0; j < maxWidth; j++) {
                 if (j < originalLevel[i].length) {
                     int tile = originalLevel[i][j];
-                    if (tile == 5) { // 箱子在目标点上
-                        currentLevelLayout[i][j] = 4; // 布局是目标点
-                        currentMap[i][j] = 3;         // 地图上是箱子
-                    } else if (tile == 4) { // 玩家
-                        currentLevelLayout[i][j] = 0; // 布局是地面
-                        currentMap[i][j] = 2;         // 地图上是玩家
-                    } else if (tile == 2) { // 目标点
-                        currentLevelLayout[i][j] = 4; // 布局是目标点
-                        currentMap[i][j] = 0;
-                    } else if (tile == 3) { // 箱子
-                        currentLevelLayout[i][j] = 0;
-                        currentMap[i][j] = 3;
-                    } else { // 墙或地面
-                        currentLevelLayout[i][j] = tile;
-                        currentMap[i][j] = 0;
+                    if (tile == 5) {
+                        currentLevelLayout[i][j] = 4; currentMap[i][j] = 3;
+                    } else if (tile == 4) {
+                        currentLevelLayout[i][j] = 0; currentMap[i][j] = 2;
+                    } else if (tile == 2) {
+                        currentLevelLayout[i][j] = 4; currentMap[i][j] = 0;
+                    } else if (tile == 3) {
+                        currentLevelLayout[i][j] = 0; currentMap[i][j] = 3;
+                    } else {
+                        currentLevelLayout[i][j] = tile; currentMap[i][j] = 0;
                     }
                 } else {
-                    currentLevelLayout[i][j] = 0;
-                    currentMap[i][j] = 0;
+                    currentLevelLayout[i][j] = 0; currentMap[i][j] = 0;
                 }
             }
         }
         drawMap();
-        setControlsDisabled(false);
+        setControlsForManualPlay(true);
         if (rootPane != null) rootPane.requestFocus();
     }
 
@@ -178,13 +148,20 @@ public class HelloController {
         }
     }
 
-    private void setControlsDisabled(boolean disabled) {
-        if (solveButton != null) solveButton.setDisable(disabled);
-        if (resetButton != null) resetButton.setDisable(disabled);
-        if (skipButton != null) skipButton.setDisable(disabled);
-        if (rootPane != null) {
-            rootPane.setOnKeyPressed(disabled ? null : (event -> handleKeyPress(event.getCode())));
-        }
+    private void setControlsForManualPlay(boolean enabled) {
+        solveButton.setDisable(!enabled);
+        resetButton.setDisable(!enabled);
+        skipButton.setDisable(!enabled);
+        pauseButton.setDisable(true);
+        rootPane.setOnKeyPressed(enabled ? (event -> handleKeyPress(event.getCode())) : null);
+    }
+
+    private void setControlsForSolving() {
+        solveButton.setDisable(true);
+        resetButton.setDisable(true);
+        skipButton.setDisable(true);
+        pauseButton.setDisable(false);
+        rootPane.setOnKeyPressed(null);
     }
 
     private void drawMap() {
@@ -192,33 +169,28 @@ public class HelloController {
         for (int row = 0; row < currentMap.length; row++) {
             for (int col = 0; col < currentMap[row].length; col++) {
                 ImageView groundView = new ImageView(groundImage);
-                groundView.setFitWidth(40);
-                groundView.setFitHeight(40);
+                groundView.setFitWidth(40); groundView.setFitHeight(40);
                 gameGrid.add(groundView, col, row);
 
                 int layoutTile = currentLevelLayout[row][col];
                 if (layoutTile == 4) {
                     ImageView goalView = new ImageView(goalImage);
-                    goalView.setFitWidth(40);
-                    goalView.setFitHeight(40);
+                    goalView.setFitWidth(40); goalView.setFitHeight(40);
                     gameGrid.add(goalView, col, row);
                 } else if (layoutTile == 1) {
                     ImageView wallView = new ImageView(wallImage);
-                    wallView.setFitWidth(40);
-                    wallView.setFitHeight(40);
+                    wallView.setFitWidth(40); wallView.setFitHeight(40);
                     gameGrid.add(wallView, col, row);
                 }
 
                 int objectTile = currentMap[row][col];
-                if (objectTile == 2) { // 玩家
+                if (objectTile == 2) {
                     ImageView playerView = new ImageView(currentPlayerImage);
-                    playerView.setFitWidth(40);
-                    playerView.setFitHeight(40);
+                    playerView.setFitWidth(40); playerView.setFitHeight(40);
                     gameGrid.add(playerView, col, row);
-                } else if (objectTile == 3) { // 箱子
+                } else if (objectTile == 3) {
                     ImageView boxView = new ImageView(currentLevelLayout[row][col] == 4 ? boxOnGoalImage : boxImage);
-                    boxView.setFitWidth(40);
-                    boxView.setFitHeight(40);
+                    boxView.setFitWidth(40); boxView.setFitHeight(40);
                     gameGrid.add(boxView, col, row);
                 }
             }
@@ -226,6 +198,11 @@ public class HelloController {
     }
 
     public void handleKeyPress(KeyCode code) {
+        if (solutionAnimation != null && solutionAnimation.getStatus() == Animation.Status.PAUSED) {
+            stopSolverAndAnimation();
+            setControlsForManualPlay(true);
+        }
+
         if (!Arrays.asList(KeyCode.UP, KeyCode.DOWN, KeyCode.LEFT, KeyCode.RIGHT).contains(code)) return;
 
         int[] playerPos = findPlayer();
@@ -242,22 +219,10 @@ public class HelloController {
     private boolean movePlayer(int playerRow, int playerCol, KeyCode code) {
         int dRow = 0, dCol = 0;
         switch (code) {
-            case UP:
-                dRow = -1;
-                currentPlayerImage = playerUpImage;
-                break;
-            case DOWN:
-                dRow = 1;
-                currentPlayerImage = playerDownImage;
-                break;
-            case LEFT:
-                dCol = -1;
-                currentPlayerImage = playerLeftImage;
-                break;
-            case RIGHT:
-                dCol = 1;
-                currentPlayerImage = playerRightImage;
-                break;
+            case UP: dRow = -1; currentPlayerImage = playerUpImage; break;
+            case DOWN: dRow = 1; currentPlayerImage = playerDownImage; break;
+            case LEFT: dCol = -1; currentPlayerImage = playerLeftImage; break;
+            case RIGHT: dCol = 1; currentPlayerImage = playerRightImage; break;
         }
 
         int targetRow = playerRow + dRow;
@@ -266,15 +231,15 @@ public class HelloController {
         if (!isValid(targetRow, targetCol) || currentLevelLayout[targetRow][targetCol] == 1) return false;
 
         int targetObject = currentMap[targetRow][targetCol];
-        if (targetObject == 0) { // 前方是空地
+        if (targetObject == 0) {
             move(playerRow, playerCol, targetRow, targetCol, 2);
             return true;
-        } else if (targetObject == 3) { // 前方是箱子
+        } else if (targetObject == 3) {
             int boxTargetRow = targetRow + dRow;
             int boxTargetCol = targetCol + dCol;
             if (isValid(boxTargetRow, boxTargetCol) && currentLevelLayout[boxTargetRow][boxTargetCol] != 1 && currentMap[boxTargetRow][boxTargetCol] == 0) {
-                move(targetRow, targetCol, boxTargetRow, boxTargetCol, 3); // 移动箱子
-                move(playerRow, playerCol, targetRow, targetCol, 2); // 移动玩家
+                move(targetRow, targetCol, boxTargetRow, boxTargetCol, 3);
+                move(playerRow, playerCol, targetRow, targetCol, 2);
                 return true;
             }
         }
@@ -303,7 +268,7 @@ public class HelloController {
         for (int i = 0; i < currentLevelLayout.length; i++) {
             for (int j = 0; j < currentLevelLayout[i].length; j++) {
                 if (currentLevelLayout[i][j] == 4 && currentMap[i][j] != 3) {
-                    return; // 只要有一个目标点上没箱子，就没赢
+                    return;
                 }
             }
         }
@@ -330,116 +295,54 @@ public class HelloController {
 
     @FXML
     private void solveLevel() {
-        setControlsDisabled(true);
+        setControlsForSolving();
         timer.stop();
-        movesLabel.setText("步数: 正在计算...");
 
-        new Thread(() -> {
-            List<KeyCode> solution = findSolution();
-            Platform.runLater(() -> {
-                if (solution == null) {
-                    showAlert("求解失败", "此关卡太复杂，无法在短时间内找到解法。");
-                    setControlsDisabled(false);
-                    timer.play();
-                } else {
-                    movesLabel.setText("步数: 找到解法，共 " + solution.size() + " 步");
-                    animateSolution(solution);
-                }
-            });
-        }).start();
-    }
-
-    private List<KeyCode> findSolution() {
-        int[] playerPos = findPlayer();
-        if(playerPos == null) return null;
-
-        List<Point> initialBoxes = new ArrayList<>();
-        for (int i = 0; i < currentMap.length; i++) {
-            for (int j = 0; j < currentMap[i].length; j++) {
-                if (currentMap[i][j] == 3) {
-                    initialBoxes.add(new Point(i, j));
-                }
+        solverTask = new Task<>() {
+            @Override
+            protected List<KeyCode> call() {
+                SokobanSolver solver = new SokobanSolver(currentLevelLayout);
+                return solver.solve(currentMap, visitedCount -> {
+                    // 更新UI线程上的消息
+                    Platform.runLater(() -> movesLabel.setText("已检查: " + visitedCount + " 状态"));
+                });
             }
-        }
-        initialBoxes.sort(Comparator.comparingInt(p -> p.row * 100 + p.col));
+        };
 
-        GameState initialState = new GameState(playerPos[0], playerPos[1], initialBoxes, null, null);
-        Queue<GameState> queue = new LinkedList<>();
-        Set<GameState> visited = new HashSet<>();
-
-        queue.add(initialState);
-        visited.add(initialState);
-
-        while (!queue.isEmpty()) {
-            GameState currentState = queue.poll();
-
-            if (isWinState(currentState.boxes)) {
-                List<KeyCode> path = new ArrayList<>();
-                GameState state = currentState;
-                while (state.parent != null) {
-                    path.add(state.move);
-                    state = state.parent;
-                }
-                Collections.reverse(path);
-                return path;
+        solverTask.setOnSucceeded(event -> {
+            movesLabel.textProperty().unbind(); // 解除绑定
+            List<KeyCode> solution = solverTask.getValue();
+            if (solution == null) {
+                showAlert("求解失败", "此关卡状态太复杂或无解。");
+                setControlsForManualPlay(true);
+                movesLabel.setText("步数: " + moveCount);
+                timer.play();
+            } else {
+                movesLabel.setText("找到解法，共 " + solution.size() + " 步");
+                animateSolution(solution);
             }
+        });
 
-            for (KeyCode move : Arrays.asList(KeyCode.UP, KeyCode.DOWN, KeyCode.LEFT, KeyCode.RIGHT)) {
-                int dRow = 0, dCol = 0;
-                switch (move) {
-                    case UP: dRow = -1; break;
-                    case DOWN: dRow = 1; break;
-                    case LEFT: dCol = -1; break;
-                    case RIGHT: dCol = 1; break;
-                }
+        solverTask.setOnFailed(event -> {
+            movesLabel.textProperty().unbind();
+            showAlert("错误", "求解过程中发生错误。");
+            setControlsForManualPlay(true);
+            movesLabel.setText("步数: " + moveCount);
+            timer.play();
+        });
 
-                int nextPlayerRow = currentState.playerRow + dRow;
-                int nextPlayerCol = currentState.playerCol + dCol;
+        solverTask.setOnCancelled(event -> {
+            movesLabel.textProperty().unbind();
+            setControlsForManualPlay(true);
+            movesLabel.setText("步数: " + moveCount);
+        });
 
-                if (!isValid(nextPlayerRow, nextPlayerCol) || currentLevelLayout[nextPlayerRow][nextPlayerCol] == 1) continue;
-
-                Point nextPlayerPoint = new Point(nextPlayerRow, nextPlayerCol);
-                if (currentState.boxes.contains(nextPlayerPoint)) {
-                    int nextBoxRow = nextPlayerRow + dRow;
-                    int nextBoxCol = nextPlayerCol + dCol;
-                    Point nextBoxPoint = new Point(nextBoxRow, nextBoxCol);
-                    if (isValid(nextBoxRow, nextBoxCol) && currentLevelLayout[nextBoxRow][nextBoxCol] != 1 && !currentState.boxes.contains(nextBoxPoint)) {
-                        List<Point> nextBoxes = new ArrayList<>(currentState.boxes);
-                        nextBoxes.remove(nextPlayerPoint);
-                        nextBoxes.add(nextBoxPoint);
-                        nextBoxes.sort(Comparator.comparingInt(p -> p.row * 100 + p.col));
-
-                        GameState nextState = new GameState(nextPlayerRow, nextPlayerCol, nextBoxes, currentState, move);
-                        if (!visited.contains(nextState)) {
-                            queue.add(nextState);
-                            visited.add(nextState);
-                        }
-                    }
-                } else {
-                    GameState nextState = new GameState(nextPlayerRow, nextPlayerCol, new ArrayList<>(currentState.boxes), currentState, move);
-                    if (!visited.contains(nextState)) {
-                        queue.add(nextState);
-                        visited.add(nextState);
-                    }
-                }
-            }
-        }
-        return null;
-    }
-
-    private boolean isWinState(List<Point> boxes) {
-        for (int i = 0; i < currentLevelLayout.length; i++) {
-            for (int j = 0; j < currentLevelLayout[i].length; j++) {
-                if (currentLevelLayout[i][j] == 4 && !boxes.contains(new Point(i, j))) {
-                    return false;
-                }
-            }
-        }
-        return true;
+        new Thread(solverTask).start();
     }
 
     private void animateSolution(List<KeyCode> solution) {
         solutionAnimation = new SequentialTransition();
+        setControlsForSolving();
 
         for (KeyCode move : solution) {
             KeyFrame kf = new KeyFrame(Duration.millis(200), e -> {
@@ -453,9 +356,42 @@ public class HelloController {
         }
 
         solutionAnimation.setOnFinished(e -> {
+            stopSolverAndAnimation();
+            setControlsForManualPlay(true);
             checkWinCondition();
         });
 
         solutionAnimation.play();
+    }
+
+    @FXML
+    private void pauseSolveAnimation() {
+        if (solutionAnimation == null) return;
+
+        if (solutionAnimation.getStatus() == Animation.Status.RUNNING) {
+            solutionAnimation.pause();
+            pauseButton.setText("继续");
+            resetButton.setDisable(false);
+            rootPane.setOnKeyPressed(event -> handleKeyPress(event.getCode()));
+
+        } else if (solutionAnimation.getStatus() == Animation.Status.PAUSED) {
+            solutionAnimation.play();
+            pauseButton.setText("暂停解关");
+            resetButton.setDisable(true);
+            rootPane.setOnKeyPressed(null);
+        }
+    }
+
+    private void stopSolverAndAnimation() {
+        if (solutionAnimation != null) {
+            solutionAnimation.stop();
+            solutionAnimation = null;
+        }
+        if (solverTask != null && solverTask.isRunning()) {
+            solverTask.cancel(true);
+            solverTask = null;
+        }
+        pauseButton.setText("暂停解关");
+        pauseButton.setDisable(true);
     }
 }

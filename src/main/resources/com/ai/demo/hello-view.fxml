@@ -49,6 +49,7 @@
                 <Button fx:id="resetButton" focusTraversable="false" mnemonicParsing="false" onAction="#resetGame" text="重置本关" />
                 <Button fx:id="skipButton" focusTraversable="false" mnemonicParsing="false" onAction="#skipLevel" text="跳过关卡" />
                 <Button fx:id="solveButton" focusTraversable="false" mnemonicParsing="false" onAction="#solveLevel" text="自动解关" />
+                <Button fx:id="pauseButton" focusTraversable="false" mnemonicParsing="false" onAction="#pauseSolveAnimation" text="暂停解关" disable="true" />
             </children>
         </HBox>
     </bottom>
