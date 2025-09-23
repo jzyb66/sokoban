@@ -2,181 +2,244 @@ package com.ai.demo;
 
 import javafx.fxml.FXML;
 import javafx.scene.control.Alert;
+import javafx.scene.control.Button;
+import javafx.scene.control.Label;
 import javafx.scene.image.Image;
 import javafx.scene.image.ImageView;
 import javafx.scene.input.KeyCode;
+import javafx.scene.layout.BorderPane;
 import javafx.scene.layout.GridPane;
+
+import java.util.ArrayList;
+import java.util.List;
+import java.util.Objects;
 
 public class HelloController {
 
-    @FXML
-    private GridPane gameGrid;
+    @FXML private BorderPane rootPane;
+    @FXML private GridPane gameGrid;
+    @FXML private Label levelLabel;
+    @FXML private Button resetButton;
 
-    // 原始地图布局，用于重置游戏
-    private final int[][] levelMap = {
-            {1, 1, 1, 1, 1, 1, 1, 1, 1, 1},
-            {1, 0, 0, 0, 1, 1, 1, 1, 1, 1},
-            {1, 0, 2, 0, 0, 0, 0, 0, 1, 1},
-            {1, 0, 0, 3, 0, 1, 4, 0, 0, 1},
-            {1, 1, 1, 0, 3, 0, 0, 4, 0, 1},
-            {1, 0, 0, 0, 1, 1, 0, 0, 0, 1},
-            {1, 0, 0, 0, 0, 0, 0, 1, 1, 1},
-            {1, 1, 1, 1, 1, 1, 1, 1, 1, 1}
-    };
+    // 数据映射: 0:空地, 1:墙, 2:玩家, 3:箱子, 4:目标点, 5:箱子在目标点上(仅用于初始布局)
+    private final List<int[][]> levels = new ArrayList<>();
+    private int currentLevelIndex = 0;
 
-    // 当前游戏状态的地图
-    private int[][] currentMap;
+    private int[][] currentMap;         // 保存游戏当前状态
+    private int[][] currentLevelLayout; // 仅保存关卡的墙体和目标点布局
 
-    private Image wallImage;
-    private Image playerImage;
-    private Image boxImage;
-    private Image goalImage;
-    private Image groundImage;
-    private Image boxOnGoalImage; // 箱子在目标点上的图片
+    // 使用原始图片资源
+    private Image wallImage, playerImage, boxImage, goalImage, groundImage, boxOnGoalImage;
 
     @FXML
     public void initialize() {
-        try {
-            wallImage = new Image(getClass().getResourceAsStream("/images/wall.png"));
-            playerImage = new Image(getClass().getResourceAsStream("/images/player.png"));
-            boxImage = new Image(getClass().getResourceAsStream("/images/box.png"));
-            goalImage = new Image(getClass().getResourceAsStream("/images/goal.png"));
-            groundImage = new Image(getClass().getResourceAsStream("/images/ground.png"));
-            boxOnGoalImage = new Image(getClass().getResourceAsStream("/images/box_on_goal.png")); // 假设有这张图
-        } catch (Exception e) {
-            System.err.println("图片加载失败。请确保images文件夹中有 wall.png, player.png, box.png, goal.png, ground.png, 和 box_on_goal.png。");
-            e.printStackTrace();
-        }
-
-        resetGame();
+        loadImages();
+        createLevels();
+        loadLevel(currentLevelIndex);
     }
 
-    private void resetGame() {
-        currentMap = new int[levelMap.length][];
-        for (int i = 0; i < levelMap.length; i++) {
-            currentMap[i] = new int[levelMap[i].length];
-            System.arraycopy(levelMap[i], 0, currentMap[i], 0, levelMap[i].length);
+    private void loadImages() {
+        try {
+            // *** 使用您项目最开始的图片命名 ***
+            wallImage = new Image(Objects.requireNonNull(getClass().getResourceAsStream("/images/wall.png")));
+            playerImage = new Image(Objects.requireNonNull(getClass().getResourceAsStream("/images/player.png")));
+            boxImage = new Image(Objects.requireNonNull(getClass().getResourceAsStream("/images/box.png")));
+            goalImage = new Image(Objects.requireNonNull(getClass().getResourceAsStream("/images/goal.png")));
+            groundImage = new Image(Objects.requireNonNull(getClass().getResourceAsStream("/images/ground.png")));
+            boxOnGoalImage = new Image(Objects.requireNonNull(getClass().getResourceAsStream("/images/box_on_goal.png")));
+        } catch (NullPointerException e) {
+            showAlert("严重错误", "一个或多个图片资源加载失败！\n请确保 `resources/images` 文件夹存在，并且包含以下文件:\nwall.png, player.png, box.png, goal.png, ground.png, box_on_goal.png");
+            e.printStackTrace();
+        }
+    }
+
+    private void createLevels() {
+        // 使用 shunyue1320/sokoban 项目的关卡数据
+        // 0:空地, 1:墙, 2:玩家(原4), 3:箱子, 4:目标点(原2), 5:箱子在目标点上
+        levels.add(new int[][]{
+                {0,0,0,0,0,0,1,1,1,0,0,0,0,0,0,0},
+                {0,0,0,0,0,0,1,4,1,0,0,0,0,0,0,0},
+                {0,0,0,0,0,0,1,0,1,1,1,1,0,0,0,0},
+                {0,0,0,0,1,1,1,3,0,3,4,1,0,0,0,0},
+                {0,0,0,0,1,4,0,3,2,1,1,1,0,0,0,0},
+                {0,0,0,0,1,1,1,1,3,1,0,0,0,0,0,0},
+                {0,0,0,0,0,0,0,1,4,1,0,0,0,0,0,0},
+                {0,0,0,0,0,0,0,1,1,1,0,0,0,0,0,0}
+        });
+
+        levels.add(new int[][]{
+                {0,0,0,0,1,1,1,1,1,0,0,0,0,0,0,0},
+                {0,0,0,0,1,2,0,0,1,0,0,0,0,0,0,0}, // JS版这里是4(人物)，但目标点是2，这里改为2
+                {0,0,0,0,1,0,3,3,1,0,1,1,1,0,0,0},
+                {0,0,0,0,1,0,3,0,1,0,1,4,1,0,0,0},
+                {0,0,0,0,1,1,1,0,1,1,1,4,1,0,0,0},
+                {0,0,0,0,0,1,1,0,0,0,0,4,1,0,0,0},
+                {0,0,0,0,0,1,0,0,0,1,0,0,1,0,0,0},
+                {0,0,0,0,0,1,0,0,0,1,1,1,1,0,0,0},
+                {0,0,0,0,0,1,1,1,1,1,0,0,0,0,0,0}
+        });
+    }
+
+    private void loadLevel(int levelIndex) {
+        if (levelIndex < 0 || levelIndex >= levels.size()) return;
+        currentLevelIndex = levelIndex;
+        levelLabel.setText("关卡: " + (currentLevelIndex + 1));
+
+        int[][] originalLevel = levels.get(levelIndex);
+        currentLevelLayout = new int[originalLevel.length][];
+        currentMap = new int[originalLevel.length][];
+
+        for (int i = 0; i < originalLevel.length; i++) {
+            int[] row = originalLevel[i];
+            currentLevelLayout[i] = new int[row.length];
+            currentMap[i] = new int[row.length];
+            for (int j = 0; j < row.length; j++) {
+                int tile = row[j];
+                // 关键处理：分离布局和物体
+                if (tile == 5) { // 箱子在目标点上
+                    currentLevelLayout[i][j] = 4; // 布局层是目标点
+                    currentMap[i][j] = 3;         // 游戏状态层是箱子
+                } else if (tile == 2 || tile == 3) { // 玩家或箱子
+                    currentLevelLayout[i][j] = 0; // 布局层是空地
+                    currentMap[i][j] = tile;      // 游戏状态层是物体
+                } else { // 墙、目标点、空地
+                    currentLevelLayout[i][j] = tile;
+                    currentMap[i][j] = 0; // 游戏状态层默认是空地
+                }
+            }
         }
         drawMap();
+
+        if (rootPane != null) {
+            rootPane.requestFocus();
+        }
+    }
+
+    @FXML
+    public void resetGame() {
+        loadLevel(currentLevelIndex);
     }
 
     private void drawMap() {
         gameGrid.getChildren().clear();
         for (int row = 0; row < currentMap.length; row++) {
             for (int col = 0; col < currentMap[row].length; col++) {
+                // 1. 画地砖
                 ImageView groundView = new ImageView(groundImage);
                 groundView.setFitWidth(40);
                 groundView.setFitHeight(40);
                 gameGrid.add(groundView, col, row);
 
-                ImageView imageView = new ImageView();
-                imageView.setFitWidth(40);
-                imageView.setFitHeight(40);
-
-                // 如果原始地图是目标点，先画目标点
-                if (levelMap[row][col] == 4) {
+                // 2. 在地砖上画目标点或墙
+                int layoutTile = currentLevelLayout[row][col];
+                if (layoutTile == 4) { // 目标点
                     ImageView goalView = new ImageView(goalImage);
                     goalView.setFitWidth(40);
                     goalView.setFitHeight(40);
                     gameGrid.add(goalView, col, row);
+                } else if (layoutTile == 1) { // 墙
+                    ImageView wallView = new ImageView(wallImage);
+                    wallView.setFitWidth(40);
+                    wallView.setFitHeight(40);
+                    gameGrid.add(wallView, col, row);
                 }
 
-                switch (currentMap[row][col]) {
-                    case 1:
-                        imageView.setImage(wallImage);
-                        break;
-                    case 2:
-                        imageView.setImage(playerImage);
-                        break;
-                    case 3: // 判断箱子是否在目标点上
-                        if (levelMap[row][col] == 4) {
-                            imageView.setImage(boxOnGoalImage);
-                        } else {
-                            imageView.setImage(boxImage);
-                        }
-                        break;
-                    // 目标点已经预先画好，所以这里不需要再画
-                    case 4:
-                    default:
-                        continue;
+                // 3. 画最上层的动态物体 (玩家或箱子)
+                int objectTile = currentMap[row][col];
+                if (objectTile == 2 || objectTile == 3) {
+                    ImageView topView = new ImageView();
+                    topView.setFitWidth(40);
+                    topView.setFitHeight(40);
+                    if (objectTile == 2) {
+                        topView.setImage(playerImage);
+                    } else { // objectTile == 3
+                        topView.setImage(currentLevelLayout[row][col] == 4 ? boxOnGoalImage : boxImage);
+                    }
+                    gameGrid.add(topView, col, row);
                 }
-                gameGrid.add(imageView, col, row);
             }
         }
     }
 
     public void handleKeyPress(KeyCode code) {
-        if (code != KeyCode.UP && code != KeyCode.DOWN && code != KeyCode.LEFT && code != KeyCode.RIGHT) {
-            return;
-        }
-
-        // 1. 找到玩家当前位置
-        int playerRow = -1, playerCol = -1;
-        for (int i = 0; i < currentMap.length; i++) {
-            for (int j = 0; j < currentMap[i].length; j++) {
-                if (currentMap[i][j] == 2) {
-                    playerRow = i;
-                    playerCol = j;
-                    break;
-                }
-            }
-        }
-
-        // 2. 计算目标位置
-        int targetRow = playerRow;
-        int targetCol = playerCol;
+        int dRow = 0, dCol = 0;
         switch (code) {
-            case UP:    targetRow--; break;
-            case DOWN:  targetRow++; break;
-            case LEFT:  targetCol--; break;
-            case RIGHT: targetCol++; break;
+            case UP: dRow = -1; break;
+            case DOWN: dRow = 1; break;
+            case LEFT: dCol = -1; break;
+            case RIGHT: dCol = 1; break;
+            default: return;
         }
 
-        // 3. 移动逻辑判断
-        // 如果目标是墙，则不动
-        if (currentMap[targetRow][targetCol] == 1) {
-            return;
-        }
-        // 如果目标是空地或目标点
-        else if (currentMap[targetRow][targetCol] == 0 || currentMap[targetRow][targetCol] == 4) {
-            currentMap[playerRow][playerCol] = 0;
-            currentMap[targetRow][targetCol] = 2;
-        }
-        // 如果目标是箱子
-        else if (currentMap[targetRow][targetCol] == 3) {
-            int boxTargetRow = targetRow + (targetRow - playerRow);
-            int boxTargetCol = targetCol + (targetCol - playerCol);
+        int[] playerPos = findPlayer();
+        if (playerPos == null) return;
+        int playerRow = playerPos[0];
+        int playerCol = playerPos[1];
 
-            // 判断箱子的目标位置是否可达
-            if (currentMap[boxTargetRow][boxTargetCol] == 0 || currentMap[boxTargetRow][boxTargetCol] == 4) {
-                currentMap[targetRow][targetCol] = 0; // 原箱子位置变为空地
-                currentMap[boxTargetRow][boxTargetCol] = 3; // 新位置变为箱子
-                currentMap[playerRow][playerCol] = 0; // 原玩家位置变为空地
-                currentMap[targetRow][targetCol] = 2; // 新玩家位置
+        int targetRow = playerRow + dRow;
+        int targetCol = playerCol + dCol;
+
+        if (!isValid(targetRow, targetCol)) return;
+        if (currentLevelLayout[targetRow][targetCol] == 1) return; // 撞墙
+
+        // 查看目标格子上的物体
+        int targetObject = currentMap[targetRow][targetCol];
+        if (targetObject == 0) { // 目标是空地
+            move(playerRow, playerCol, targetRow, targetCol, 2);
+        } else if (targetObject == 3) { // 目标是箱子
+            int boxTargetRow = targetRow + dRow;
+            int boxTargetCol = targetCol + dCol;
+            if (isValid(boxTargetRow, boxTargetCol) && currentLevelLayout[boxTargetRow][boxTargetCol] != 1 && currentMap[boxTargetRow][boxTargetCol] == 0) {
+                move(targetRow, targetCol, boxTargetRow, boxTargetCol, 3); // 移动箱子
+                move(playerRow, playerCol, targetRow, targetCol, 2);   // 移动玩家
             }
         }
 
-        // 4. 重新绘制地图并检查胜利条件
         drawMap();
         checkWinCondition();
     }
 
+    private void move(int oldRow, int oldCol, int newRow, int newCol, int objectId) {
+        currentMap[oldRow][oldCol] = 0; // 原位置变为空物体
+        currentMap[newRow][newCol] = objectId; // 新位置变为移动的物体
+    }
+
+    private int[] findPlayer() {
+        for (int i = 0; i < currentMap.length; i++) {
+            for (int j = 0; j < currentMap[i].length; j++) {
+                if (currentMap[i][j] == 2) return new int[]{i, j};
+            }
+        }
+        return null;
+    }
+
+    private boolean isValid(int row, int col) {
+        return row >= 0 && row < currentMap.length && col >= 0 && col < currentMap[row].length;
+    }
+
     private void checkWinCondition() {
-        for (int i = 0; i < levelMap.length; i++) {
-            for (int j = 0; j < levelMap[i].length; j++) {
-                // 如果一个目标点上没有箱子，则游戏未结束
-                if (levelMap[i][j] == 4 && currentMap[i][j] != 3) {
+        for (int i = 0; i < currentLevelLayout.length; i++) {
+            for (int j = 0; j < currentLevelLayout[i].length; j++) {
+                if (currentLevelLayout[i][j] == 4 && currentMap[i][j] != 3) {
                     return;
                 }
             }
         }
 
-        // 如果所有目标点都有箱子，则游戏胜利
+        if (currentLevelIndex < levels.size() - 1) {
+            showAlert("恭喜过关!", "你完成了第 " + (currentLevelIndex + 1) + " 关！即将进入下一关。");
+            loadLevel(currentLevelIndex + 1);
+        } else {
+            showAlert("恭喜!", "你已经完成了所有关卡！游戏将从第一关重新开始。");
+            loadLevel(0);
+        }
+    }
+
+    private void showAlert(String title, String message) {
         Alert alert = new Alert(Alert.AlertType.INFORMATION);
-        alert.setTitle("恭喜!");
+        alert.setTitle(title);
         alert.setHeaderText(null);
-        alert.setContentText("你赢了！游戏将重置。");
+        alert.setContentText(message);
         alert.showAndWait();
-        resetGame();
     }
 }
