@@ -5,7 +5,6 @@ import javafx.animation.KeyFrame;
 import javafx.animation.SequentialTransition;
 import javafx.animation.Timeline;
 import javafx.application.Platform;
-import javafx.concurrent.Task;
 import javafx.fxml.FXML;
 import javafx.scene.control.Alert;
 import javafx.scene.control.Button;
@@ -38,7 +37,7 @@ public class HelloController {
     private List<int[][]> levels = new ArrayList<>();
     private int currentLevelIndex = 0;
     private int moveCount = 0;
-    private boolean isLevelComplete = false; // Flag to prevent actions after win
+    private boolean isLevelComplete = false;
 
     private int[][] currentMap;
     private int[][] currentLevelLayout;
@@ -50,7 +49,6 @@ public class HelloController {
     private Timeline timer;
     private int timeSeconds;
     private SequentialTransition solutionAnimation;
-    private Task<List<KeyCode>> solverTask;
 
     @FXML
     public void initialize() {
@@ -92,7 +90,7 @@ public class HelloController {
     private void loadLevel(int levelIndex) {
         if (levelIndex < 0 || levelIndex >= levels.size()) return;
 
-        isLevelComplete = false; // Reset the flag for the new level
+        isLevelComplete = false;
         currentLevelIndex = levelIndex;
         levelLabel.setText("关卡: " + (currentLevelIndex + 1));
         moveCount = 0;
@@ -101,7 +99,7 @@ public class HelloController {
         timeLabel.setText("时间: 0s");
         if (timer != null) timer.playFromStart();
 
-        stopSolverAndAnimation();
+        stopSolutionAnimation();
 
         currentPlayerImage = playerDownImage;
         int[][] originalLevel = levels.get(levelIndex);
@@ -206,10 +204,10 @@ public class HelloController {
     }
 
     public void handleKeyPress(KeyCode code) {
-        if (isLevelComplete) return; // Ignore key presses after winning
+        if (isLevelComplete) return;
 
         if (solutionAnimation != null && solutionAnimation.getStatus() == Animation.Status.PAUSED) {
-            stopSolverAndAnimation();
+            stopSolutionAnimation();
             setControlsForManualPlay(true);
         }
 
@@ -283,10 +281,9 @@ public class HelloController {
             }
         }
 
-        // *** THIS IS THE FINAL LOGIC FOR THE WIN CONDITION ***
-        isLevelComplete = true; // Set flag to true to stop further moves
-        timer.stop(); // Stop the timer immediately
-        rootPane.setOnKeyPressed(null); // Disable keyboard input
+        isLevelComplete = true;
+        timer.stop();
+        rootPane.setOnKeyPressed(null);
 
         if (currentLevelIndex < levels.size() - 1) {
             showAlertAndThen("恭喜过关!", "你完成了第 " + (currentLevelIndex + 1) + " 关！", () -> {
@@ -305,7 +302,7 @@ public class HelloController {
             alert.setTitle(title);
             alert.setHeaderText(null);
             alert.setContentText(message);
-            alert.showAndWait(); // This blocks until the user clicks OK
+            alert.showAndWait();
 
             if (onOk != null) {
                 onOk.run();
@@ -315,42 +312,19 @@ public class HelloController {
 
     @FXML
     private void solveLevel() {
-        setControlsForSolving();
-        timer.stop();
-        movesLabel.setText("正在搜索解法...");
+        // 1. 总是先重置到关卡初始状态
+        resetGame();
+        timer.stop(); // resetGame 会启动计时器，我们这里需要暂停它
 
-        solverTask = new Task<>() {
-            @Override
-            protected List<KeyCode> call() {
-                SokobanSolver solver = new SokobanSolver(currentLevelLayout);
-                return solver.solve(currentMap, visitedCount -> {
-                    Platform.runLater(() -> movesLabel.setText("已搜索: " + visitedCount));
-                });
-            }
-        };
+        // 2. 从 SolutionData 获取预设解法
+        List<KeyCode> solution = SolutionData.getSolution(currentLevelIndex);
 
-        solverTask.setOnSucceeded(event -> {
-            List<KeyCode> solution = solverTask.getValue();
-            if (solution == null) {
-                showAlertAndThen("求解失败", "此关卡状态太复杂或无解。", null);
-                setControlsForManualPlay(true);
-                movesLabel.setText("步数: " + moveCount);
-                timer.play();
-            } else {
-                movesLabel.setText("找到解法!");
-                animateSolution(solution);
-            }
-        });
-
-        solverTask.setOnFailed(event -> {
-            showAlertAndThen("错误", "求解过程中发生错误: " + event.getSource().getException().getMessage(), null);
-            setControlsForManualPlay(true);
-            movesLabel.setText("步数: " + moveCount);
-            timer.play();
-            event.getSource().getException().printStackTrace();
-        });
-
-        new Thread(solverTask).start();
+        if (solution == null) {
+            showAlertAndThen("提示", "此关卡没有可用答案。", null);
+        } else {
+            movesLabel.setText("开始播放解法...");
+            animateSolution(solution);
+        }
     }
 
     private void animateSolution(List<KeyCode> solution) {
@@ -372,7 +346,7 @@ public class HelloController {
         }
 
         solutionAnimation.setOnFinished(e -> {
-            stopSolverAndAnimation();
+            stopSolutionAnimation();
             setControlsForManualPlay(true);
             checkWinCondition();
         });
@@ -389,7 +363,6 @@ public class HelloController {
             pauseButton.setText("继续");
             resetButton.setDisable(false);
             rootPane.setOnKeyPressed(event -> handleKeyPress(event.getCode()));
-
         } else if (solutionAnimation.getStatus() == Animation.Status.PAUSED) {
             solutionAnimation.play();
             pauseButton.setText("暂停解关");
@@ -398,14 +371,10 @@ public class HelloController {
         }
     }
 
-    private void stopSolverAndAnimation() {
+    private void stopSolutionAnimation() {
         if (solutionAnimation != null) {
             solutionAnimation.stop();
             solutionAnimation = null;
-        }
-        if (solverTask != null && solverTask.isRunning()) {
-            solverTask.cancel(true);
-            solverTask = null;
         }
         pauseButton.setText("暂停解关");
         pauseButton.setDisable(true);
