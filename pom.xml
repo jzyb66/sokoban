@@ -47,7 +47,7 @@
                     <execution>
                         <id>default-cli</id>
                         <configuration>
-                            <mainClass>com.ai.demo/com.ai.demo.HelloApplication</mainClass>
+                            <mainClass>com.ai.demo/com.ai.sokoban.HelloApplication</mainClass>
                             <launcher>app</launcher>
                         </configuration>
                     </execution>

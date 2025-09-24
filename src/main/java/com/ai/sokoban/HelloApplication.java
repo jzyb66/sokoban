@@ -1,4 +1,4 @@
-package com.ai.demo;
+package com.ai.sokoban;
 
 import javafx.application.Application;
 import javafx.fxml.FXMLLoader;

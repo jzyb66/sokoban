@@ -1,8 +1,8 @@
-module com.ai.demo {
+module com.ai.sokoban {
     requires javafx.controls;
     requires javafx.fxml;
 
 
-    opens com.ai.demo to javafx.fxml;
-    exports com.ai.demo;
+    opens com.ai.sokoban to javafx.fxml;
+    exports com.ai.sokoban;
 }

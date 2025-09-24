@@ -1,4 +1,4 @@
-package com.ai.demo;
+package com.ai.sokoban;
 
 import javafx.animation.Animation;
 import javafx.animation.KeyFrame;
