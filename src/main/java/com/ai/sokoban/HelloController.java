@@ -8,6 +8,7 @@ import javafx.application.Platform;
 import javafx.fxml.FXML;
 import javafx.scene.control.Alert;
 import javafx.scene.control.Button;
+import javafx.scene.control.ChoiceBox;
 import javafx.scene.control.Label;
 import javafx.scene.image.Image;
 import javafx.scene.image.ImageView;
@@ -20,7 +21,8 @@ import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.List;
 import java.util.Objects;
-import java.util.concurrent.atomic.AtomicInteger;
+import java.util.stream.Collectors;
+import java.util.stream.IntStream;
 
 public class HelloController {
 
@@ -31,8 +33,10 @@ public class HelloController {
     @FXML private Label timeLabel;
     @FXML private Button solveButton;
     @FXML private Button resetButton;
-    @FXML private Button skipButton;
+    @FXML private ChoiceBox<Integer> levelChoiceBox;
     @FXML private Button pauseButton;
+    @FXML private Button prevStepButton;
+    @FXML private Button nextStepButton;
 
     private List<int[][]> levels = new ArrayList<>();
     private int currentLevelIndex = 0;
@@ -42,6 +46,9 @@ public class HelloController {
     private int[][] currentMap;
     private int[][] currentLevelLayout;
 
+    // 用于存储手动操作的历史记录
+    private List<int[][]> moveHistory;
+
     private Image wallImage, boxImage, goalImage, groundImage, boxOnGoalImage;
     private Image playerUpImage, playerDownImage, playerLeftImage, playerRightImage;
     private Image currentPlayerImage;
@@ -49,13 +56,26 @@ public class HelloController {
     private Timeline timer;
     private int timeSeconds;
     private SequentialTransition solutionAnimation;
+    private List<KeyCode> solution;
+    private int solutionStep = 0;
+
 
     @FXML
     public void initialize() {
         loadImages();
         createLevels();
         setupTimer();
+        setupLevelChoiceBox();
         loadLevel(currentLevelIndex);
+    }
+
+    private int[][] deepCopy(int[][] original) {
+        if (original == null) return null;
+        final int[][] result = new int[original.length][];
+        for (int i = 0; i < original.length; i++) {
+            result[i] = Arrays.copyOf(original[i], original[i].length);
+        }
+        return result;
     }
 
     private void setupTimer() {
@@ -87,22 +107,19 @@ public class HelloController {
         levels = LevelData.getLevels();
     }
 
-    private void loadLevel(int levelIndex) {
-        if (levelIndex < 0 || levelIndex >= levels.size()) return;
+    private void setupLevelChoiceBox() {
+        levelChoiceBox.getItems().addAll(
+                IntStream.rangeClosed(1, levels.size()).boxed().collect(Collectors.toList())
+        );
+        levelChoiceBox.getSelectionModel().selectedItemProperty().addListener((obs, oldVal, newVal) -> {
+            if (newVal != null && newVal - 1 != currentLevelIndex) {
+                loadLevel(newVal - 1);
+            }
+        });
+    }
 
-        isLevelComplete = false;
-        currentLevelIndex = levelIndex;
-        levelLabel.setText("关卡: " + (currentLevelIndex + 1));
-        moveCount = 0;
-        movesLabel.setText("步数: 0");
-        timeSeconds = 0;
-        timeLabel.setText("时间: 0s");
-        if (timer != null) timer.playFromStart();
-
-        stopSolutionAnimation();
-
-        currentPlayerImage = playerDownImage;
-        int[][] originalLevel = levels.get(levelIndex);
+    private void resetMapToInitialState() {
+        int[][] originalLevel = levels.get(currentLevelIndex);
         int numRows = originalLevel.length;
         int maxWidth = Arrays.stream(originalLevel).mapToInt(row -> row.length).max().orElse(0);
         currentLevelLayout = new int[numRows][maxWidth];
@@ -113,21 +130,54 @@ public class HelloController {
                 if (j < originalLevel[i].length) {
                     int tile = originalLevel[i][j];
                     if (tile == 5) {
-                        currentLevelLayout[i][j] = 4; currentMap[i][j] = 3;
+                        currentLevelLayout[i][j] = 4;
+                        currentMap[i][j] = 3;
                     } else if (tile == 4) {
-                        currentLevelLayout[i][j] = 0; currentMap[i][j] = 2;
+                        currentLevelLayout[i][j] = 0;
+                        currentMap[i][j] = 2;
                     } else if (tile == 2) {
-                        currentLevelLayout[i][j] = 4; currentMap[i][j] = 0;
+                        currentLevelLayout[i][j] = 4;
+                        currentMap[i][j] = 0;
                     } else if (tile == 3) {
-                        currentLevelLayout[i][j] = 0; currentMap[i][j] = 3;
+                        currentLevelLayout[i][j] = 0;
+                        currentMap[i][j] = 3;
                     } else {
-                        currentLevelLayout[i][j] = tile; currentMap[i][j] = 0;
+                        currentLevelLayout[i][j] = tile;
+                        currentMap[i][j] = 0;
                     }
                 } else {
-                    currentLevelLayout[i][j] = 0; currentMap[i][j] = 0;
+                    currentLevelLayout[i][j] = 0;
+                    currentMap[i][j] = 0;
                 }
             }
         }
+    }
+
+
+    private void loadLevel(int levelIndex) {
+        if (levelIndex < 0 || levelIndex >= levels.size()) return;
+
+        isLevelComplete = false;
+        currentLevelIndex = levelIndex;
+        if (levelChoiceBox.getSelectionModel().getSelectedIndex() != levelIndex) {
+            levelChoiceBox.getSelectionModel().select(levelIndex);
+        }
+        levelLabel.setText("关卡: " + (currentLevelIndex + 1));
+        moveCount = 0;
+        movesLabel.setText("步数: 0");
+        timeSeconds = 0;
+        timeLabel.setText("时间: 0s");
+
+        // 初始化操作历史
+        moveHistory = new ArrayList<>();
+
+        if (timer != null) timer.playFromStart();
+
+        stopSolutionAnimation();
+
+        currentPlayerImage = playerDownImage;
+        resetMapToInitialState(); // 使用新方法重置地图
+
         drawMap();
         setControlsForManualPlay(true);
         if (rootPane != null) {
@@ -141,30 +191,52 @@ public class HelloController {
         loadLevel(currentLevelIndex);
     }
 
-    @FXML
-    public void skipLevel() {
-        timer.stop();
-        if (currentLevelIndex < levels.size() - 1) {
-            loadLevel(currentLevelIndex + 1);
-        } else {
-            showAlertAndThen("提示", "已经是最后一关了！将返回第一关。", () -> loadLevel(0));
-        }
-    }
-
     private void setControlsForManualPlay(boolean enabled) {
         solveButton.setDisable(!enabled);
         resetButton.setDisable(!enabled);
-        skipButton.setDisable(!enabled);
-        pauseButton.setDisable(true);
+        levelChoiceBox.setDisable(!enabled);
+
+        // 在手动模式下，“上一步”是撤销功能
+        prevStepButton.setVisible(enabled);
+        prevStepButton.setText("上一步");
+        prevStepButton.setOnAction(e -> undoMove());
+
+        // 隐藏不相关的按钮
+        nextStepButton.setVisible(false);
+        pauseButton.setVisible(false);
+
         rootPane.setOnKeyPressed(enabled ? (event -> handleKeyPress(event.getCode())) : null);
     }
 
     private void setControlsForSolving() {
         solveButton.setDisable(true);
         resetButton.setDisable(true);
-        skipButton.setDisable(true);
+        levelChoiceBox.setDisable(true);
+
+        // 隐藏手动模式的按钮
+        prevStepButton.setVisible(false);
+        nextStepButton.setVisible(false);
+
+        // 显示“暂停”按钮
+        pauseButton.setVisible(true);
         pauseButton.setDisable(false);
+        pauseButton.setText("暂停");
+
         rootPane.setOnKeyPressed(null);
+    }
+
+    private void setControlsForPausedSolution() {
+        resetButton.setDisable(false); // 允许在暂停时重置
+        pauseButton.setText("继续");
+
+        // 显示答案控制按钮
+        prevStepButton.setVisible(true);
+        prevStepButton.setText("答案上一步");
+        prevStepButton.setOnAction(e -> prevSolutionStep());
+
+        nextStepButton.setVisible(true);
+        nextStepButton.setText("答案下一步");
+        nextStepButton.setOnAction(e -> nextSolutionStep());
     }
 
     private void drawMap() {
@@ -172,33 +244,38 @@ public class HelloController {
         for (int row = 0; row < currentMap.length; row++) {
             for (int col = 0; col < currentMap[row].length; col++) {
                 ImageView groundView = new ImageView(groundImage);
-                groundView.setFitWidth(40); groundView.setFitHeight(40);
+                groundView.setFitWidth(40);
+                groundView.setFitHeight(40);
                 gameGrid.add(groundView, col, row);
 
                 int layoutTile = currentLevelLayout[row][col];
                 if (layoutTile == 4) {
                     ImageView goalView = new ImageView(goalImage);
-                    goalView.setFitWidth(40); goalView.setFitHeight(40);
+                    goalView.setFitWidth(40);
+                    goalView.setFitHeight(40);
                     gameGrid.add(goalView, col, row);
                 } else if (layoutTile == 1) {
                     ImageView wallView = new ImageView(wallImage);
-                    wallView.setFitWidth(40); wallView.setFitHeight(40);
+                    wallView.setFitWidth(40);
+                    wallView.setFitHeight(40);
                     gameGrid.add(wallView, col, row);
                 }
 
                 int objectTile = currentMap[row][col];
                 if (objectTile == 2) {
                     ImageView playerView = new ImageView(currentPlayerImage);
-                    playerView.setFitWidth(40); playerView.setFitHeight(40);
+                    playerView.setFitWidth(40);
+                    playerView.setFitHeight(40);
                     gameGrid.add(playerView, col, row);
                 } else if (objectTile == 3) {
                     ImageView boxView = new ImageView(currentLevelLayout[row][col] == 4 ? boxOnGoalImage : boxImage);
-                    boxView.setFitWidth(40); boxView.setFitHeight(40);
+                    boxView.setFitWidth(40);
+                    boxView.setFitHeight(40);
                     gameGrid.add(boxView, col, row);
                 }
             }
         }
-        if(rootPane.getScene() != null && rootPane.getScene().getWindow() != null) {
+        if (rootPane.getScene() != null && rootPane.getScene().getWindow() != null) {
             rootPane.getScene().getWindow().sizeToScene();
         }
     }
@@ -216,21 +293,39 @@ public class HelloController {
         int[] playerPos = findPlayer();
         if (playerPos == null) return;
 
+        // 在移动前保存当前状态
+        moveHistory.add(deepCopy(currentMap));
+
         if (movePlayer(playerPos[0], playerPos[1], code)) {
             moveCount++;
             movesLabel.setText("步数: " + moveCount);
             drawMap();
             checkWinCondition();
+        } else {
+            // 如果移动无效，则移除刚刚添加的历史记录
+            moveHistory.remove(moveHistory.size() - 1);
         }
     }
 
     private boolean movePlayer(int playerRow, int playerCol, KeyCode code) {
         int dRow = 0, dCol = 0;
         switch (code) {
-            case UP: dRow = -1; currentPlayerImage = playerUpImage; break;
-            case DOWN: dRow = 1; currentPlayerImage = playerDownImage; break;
-            case LEFT: dCol = -1; currentPlayerImage = playerLeftImage; break;
-            case RIGHT: dCol = 1; currentPlayerImage = playerRightImage; break;
+            case UP:
+                dRow = -1;
+                currentPlayerImage = playerUpImage;
+                break;
+            case DOWN:
+                dRow = 1;
+                currentPlayerImage = playerDownImage;
+                break;
+            case LEFT:
+                dCol = -1;
+                currentPlayerImage = playerLeftImage;
+                break;
+            case RIGHT:
+                dCol = 1;
+                currentPlayerImage = playerRightImage;
+                break;
         }
 
         int targetRow = playerRow + dRow;
@@ -312,33 +407,33 @@ public class HelloController {
 
     @FXML
     private void solveLevel() {
-        // 1. 总是先重置到关卡初始状态
         resetGame();
-        timer.stop(); // resetGame 会启动计时器，我们这里需要暂停它
+        timer.stop();
 
-        // 2. 从 SolutionData 获取预设解法
-        List<KeyCode> solution = SolutionData.getSolution(currentLevelIndex);
+        solution = SolutionData.getSolution(currentLevelIndex);
+        solutionStep = 0;
 
         if (solution == null) {
             showAlertAndThen("提示", "此关卡没有可用答案。", null);
         } else {
             movesLabel.setText("开始播放解法...");
-            animateSolution(solution);
+            animateSolution(solution, 0);
         }
     }
 
-    private void animateSolution(List<KeyCode> solution) {
+    private void animateSolution(List<KeyCode> moves, int startingStep) {
         solutionAnimation = new SequentialTransition();
         setControlsForSolving();
 
-        final AtomicInteger animationStepCounter = new AtomicInteger(0);
-
-        for (KeyCode move : solution) {
+        for (int i = 0; i < moves.size(); i++) {
+            final int currentMoveIndex = i;
             KeyFrame kf = new KeyFrame(Duration.millis(100), e -> {
+                solutionStep = startingStep + currentMoveIndex + 1;
+                KeyCode move = moves.get(currentMoveIndex);
                 int[] playerPos = findPlayer();
                 if (playerPos != null) {
                     movePlayer(playerPos[0], playerPos[1], move);
-                    movesLabel.setText("步数: " + animationStepCounter.incrementAndGet());
+                    movesLabel.setText("步数: " + solutionStep);
                     drawMap();
                 }
             });
@@ -360,23 +455,61 @@ public class HelloController {
 
         if (solutionAnimation.getStatus() == Animation.Status.RUNNING) {
             solutionAnimation.pause();
-            pauseButton.setText("继续");
-            resetButton.setDisable(false);
-            rootPane.setOnKeyPressed(event -> handleKeyPress(event.getCode()));
+            setControlsForPausedSolution();
         } else if (solutionAnimation.getStatus() == Animation.Status.PAUSED) {
-            solutionAnimation.play();
-            pauseButton.setText("暂停解关");
-            resetButton.setDisable(true);
-            rootPane.setOnKeyPressed(null);
+            // **FIXED LOGIC HERE**
+            // Re-create and play the animation for the remaining steps
+            if (solution != null && solutionStep < solution.size()) {
+                List<KeyCode> remainingMoves = solution.subList(solutionStep, solution.size());
+                animateSolution(remainingMoves, solutionStep);
+            }
         }
     }
+
 
     private void stopSolutionAnimation() {
         if (solutionAnimation != null) {
             solutionAnimation.stop();
             solutionAnimation = null;
         }
-        pauseButton.setText("暂停解关");
-        pauseButton.setDisable(true);
+        pauseButton.setVisible(false);
+    }
+
+    private void prevSolutionStep() {
+        if (solutionStep > 0) {
+            solutionStep--;
+            applySolutionStep(solutionStep);
+        }
+    }
+
+    private void nextSolutionStep() {
+        if (solution != null && solutionStep < solution.size()) {
+            solutionStep++;
+            applySolutionStep(solutionStep);
+        }
+    }
+
+    private void applySolutionStep(int step) {
+        resetMapToInitialState();
+
+        for (int i = 0; i < step; i++) {
+            int[] playerPos = findPlayer();
+            if (playerPos != null) {
+                movePlayer(playerPos[0], playerPos[1], solution.get(i));
+            }
+        }
+
+        movesLabel.setText("步数: " + step);
+        drawMap();
+    }
+
+    @FXML
+    private void undoMove() {
+        if (!moveHistory.isEmpty()) {
+            currentMap = moveHistory.remove(moveHistory.size() - 1);
+            moveCount--;
+            movesLabel.setText("步数: " + moveCount);
+            drawMap();
+        }
     }
 }

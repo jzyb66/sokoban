@@ -2,6 +2,7 @@
 
 <?import javafx.geometry.Insets?>
 <?import javafx.scene.control.Button?>
+<?import javafx.scene.control.ChoiceBox?>
 <?import javafx.scene.control.Label?>
 <?import javafx.scene.layout.BorderPane?>
 <?import javafx.scene.layout.GridPane?>
@@ -23,10 +24,6 @@
                     <padding>
                         <Insets bottom="5.0" left="8.0" right="8.0" top="5.0" />
                     </padding>
-                    <style>
-                        -fx-background-color: rgba(0, 0, 0, 0.5);
-                        -fx-background-radius: 10;
-                    </style>
                     <children>
                         <Label fx:id="levelLabel" text="关卡: 1" textFill="white">
                             <font><Font name="System Bold" size="16.0" /></font>
@@ -44,9 +41,11 @@
                 <HBox alignment="CENTER" prefHeight="60.0" spacing="15.0" BorderPane.alignment="CENTER">
                     <children>
                         <Button fx:id="resetButton" focusTraversable="false" mnemonicParsing="false" onAction="#resetGame" text="重置本关" />
-                        <Button fx:id="skipButton" focusTraversable="false" mnemonicParsing="false" onAction="#skipLevel" text="跳过关卡" />
+                        <ChoiceBox fx:id="levelChoiceBox" focusTraversable="false" />
                         <Button fx:id="solveButton" focusTraversable="false" mnemonicParsing="false" onAction="#solveLevel" text="答案" />
                         <Button fx:id="pauseButton" focusTraversable="false" mnemonicParsing="false" onAction="#pauseSolveAnimation" text="暂停" disable="true" />
+                        <Button fx:id="prevStepButton" focusTraversable="false" mnemonicParsing="false" text="上一步" visible="false" />
+                        <Button fx:id="nextStepButton" focusTraversable="false" mnemonicParsing="false" text="下一步" visible="false" />
                     </children>
                 </HBox>
             </bottom>
