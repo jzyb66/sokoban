@@ -1,8 +1,10 @@
 package com.ai.sokoban;
 
 import javafx.application.Application;
+import javafx.event.EventHandler;
 import javafx.fxml.FXMLLoader;
 import javafx.scene.Scene;
+import javafx.scene.input.KeyEvent;
 import javafx.scene.layout.StackPane;
 import javafx.stage.Stage;
 
@@ -10,7 +12,7 @@ import java.io.IOException;
 
 /**
  * 游戏主程序入口类。
- * 【职责】: 继承自JavaFX的Application类，负责启动应用、加载主视图(FXML)并进行初始化设置。
+ * 【职责】: 启动应用、加载主视图(FXML)并进行初始化设置。
  */
 public class HelloApplication extends Application {
 
@@ -21,41 +23,36 @@ public class HelloApplication extends Application {
      */
     @Override
     public void start(Stage stage) throws IOException {
-        // 创建FXMLLoader实例，用于加载FXML布局文件
+        // 1. 创建FXMLLoader实例，用于加载FXML布局文件
         FXMLLoader fxmlLoader = new FXMLLoader(HelloApplication.class.getResource("hello-view.fxml"));
 
-        // 加载FXML定义的根节点 (StackPane)
+        // 2. 加载FXML定义的根节点 (StackPane) 并获取其控制器
         StackPane root = fxmlLoader.load();
-        // 获取与FXML关联的控制器实例
         HelloController controller = fxmlLoader.getController();
 
-        // 创建场景(Scene)，并将根节点放入场景中
+        // 3. 创建场景(Scene)
         Scene scene = new Scene(root);
 
-        // **关键步骤**: 将键盘事件监听器直接设置在根节点上。
-        // 这是最安全的位置，因为此时Scene和Root都已完全初始化。
-        // 当用户按下键盘时，事件会传递给控制器的 handleKeyPress 方法进行处理。
-        root.setOnKeyPressed(event -> {
+        // 4. 定义键盘事件处理器。这是一个lambda表达式，它会在按键时调用控制器的方法
+        EventHandler<KeyEvent> keyEventHandler = event -> {
             controller.handleKeyPress(event.getCode());
-        });
+        };
 
-        // 将根节点的引用传递给控制器，以便UIManager可以控制键盘事件的启用/禁用
-        controller.setRootPaneForUIManager(root);
+        // 5. 将该处理器设置到根节点上，使其能够监听全局按键
+        root.setOnKeyPressed(keyEventHandler);
 
-        // 设置窗口的标题
+        // 6. **关键步骤**: 将根节点和键盘处理器本身一起传递给控制器。
+        //    这样做可以确保UIManager能随时恢复或禁用正确的键盘监听，解决了切换关卡后无法控制的问题。
+        controller.setupUIManager(root, keyEventHandler);
+
+        // 7. 完成舞台（窗口）的设置
         stage.setTitle("推箱子 (Sokoban)");
-        // 将场景设置到舞台上
         stage.setScene(scene);
+        stage.sizeToScene(); // 窗口大小自适应内容
+        stage.setResizable(false); // 禁止调整窗口大小
+        stage.show(); // 显示窗口
 
-        // 让窗口大小根据场景内容自动调整，确保界面元素完整显示
-        stage.sizeToScene();
-        // 禁止用户手动调整窗口大小，保持游戏界面的固定布局
-        stage.setResizable(false);
-
-        // 显示窗口
-        stage.show();
-
-        // 程序启动后，立即让根节点获得焦点，这样才能立刻响应键盘输入事件
+        // 8. 让根节点获得焦点，以便立即开始接收键盘事件
         root.requestFocus();
     }
 

@@ -1,10 +1,12 @@
 package com.ai.sokoban;
 
+import javafx.event.EventHandler;
 import javafx.fxml.FXML;
 import javafx.scene.control.Button;
 import javafx.scene.control.ChoiceBox;
 import javafx.scene.control.Label;
 import javafx.scene.input.KeyCode;
+import javafx.scene.input.KeyEvent;
 import javafx.scene.layout.GridPane;
 import javafx.scene.layout.StackPane;
 
@@ -52,13 +54,13 @@ public class HelloController {
     }
 
     /**
-     * 由HelloApplication调用，用于将最顶层的根节点(Root Pane)的引用传递进来。
-     * 这是为了让UIManager能够安全地控制键盘事件的监听。
+     * 由HelloApplication调用，用于将最顶层的根节点和键盘事件处理器传递进来。
      * @param rootPane 应用程序的根StackPane。
+     * @param keyEventHandler 应用程序的键盘事件处理器。
      */
-    public void setRootPaneForUIManager(StackPane rootPane) {
+    public void setupUIManager(StackPane rootPane, EventHandler<KeyEvent> keyEventHandler) {
         if (gameLogic != null && gameLogic.getUiManager() != null) {
-            gameLogic.getUiManager().setExternalRootPane(rootPane);
+            gameLogic.getUiManager().setExternalRootPaneAndHandler(rootPane, keyEventHandler);
         }
     }
 
