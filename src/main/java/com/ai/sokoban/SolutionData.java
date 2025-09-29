@@ -1,0 +1,121 @@
+package com.ai.sokoban;
+
+import javafx.scene.input.KeyCode;
+import java.util.ArrayList;
+import java.util.Arrays;
+import java.util.List;
+import java.util.Objects;
+import java.util.stream.Collectors;
+
+/**
+ * 关卡答案数据存储类。
+ * 【职责】: 作为一个静态数据提供者，集中管理所有关卡的答案。
+ * 1. 使用字符串存储原始答案，方便编辑和查看。
+ * 2. 在类加载时，将所有字符串答案预先解析并缓存为KeyCode列表，提高运行时效率。
+ */
+public class SolutionData {
+
+    // 使用简洁的字符串来存储答案：U (上), D (下), L (左), R (右)
+    // 答案字符串中的空格和换行符会被忽略。
+    private static final List<String> SOLUTIONS_STR = Arrays.asList(
+            // 关卡 1: 下上左左右上上下右右 (10步)
+            "DULLRU UDRR",
+            // 关卡 2:
+            "RRDDDDRDDL LURDRULUUU UULLDRURDD DDRRRDRUUD LLLDDLLURD RULUUUULLD RURDDDRRRD RULLLDDLLU RDRULURRR",
+            // 关卡 3:
+            "RRRRRDDRRU ULUULLLLDD DUUURRRRDD LLLRRRUULL LLDDLDRURD URRDDRURUL LLLRRRUULL LLDDLDRURR RRRRULDLLL LLUURRRRDR DLLLLRRRUU LLLLDD",
+            // 关卡 4:
+            "RDRDRDDLLR RUULDLDRUU ULDDUUUURD DDD",
+            // 关卡 5:
+            "RDRRDDRDDL LULLDLURRR DLLRRRRUUL UULLDDUURR DDRDDLLULL",
+            // 关卡 6:
+            "LLLLLDLLLL UURRRURUUL URRLDDDLDL LLULUUUURR RURRRRDDLL DLLDLUUDRR RDRDDULLDL LLDDRRRRUR LDLLLLUUUL UUUURRDDDR DRDLLRURRR DDLDLLLLUU DDRRRRURRR DRRULLLL",
+            // 关卡 7
+            "DDDLULLULL DDDUUURRDR RDDDLLULDL LRRRRRUUUL LULLDDDRDL UUUURRDLDD LDRUUURRRR UULDRDLLLU LDDDUUULDD D",
+            // 关卡 8
+            "LLLDLLLRUD RRULLLRRRR RUULLLDLDD RRULLRRRRD LLLL",
+            // 关卡 9
+            "LULULLDDRU LURDRRDRRU LLLULLDDLL LURUUURURR RURRDDDDUU UULLDRLLLL DLDDDRDRUD RULURDRRDR RULLLRRUUU LUURDDDDUU\n" +
+                    "ULLLLLDLDD DDRRRUUDRR DRRULLLRRU UUULLLLLDL DDDDRRRULL LUUURUULDD DDUUURRRRR RDDDDLLLDL LLLURRDRU",
+            // 关卡 10
+            "DRRRURRUUL LDDLDLLURR RUURRDLULD ULDD",
+            // 关卡 11
+            "ULLLDLLLUR RRLLUULDLD RRDRRURRDR RULLLRRRRU ULDRDLLLRR UULDRDL",
+            // 关卡 12
+            "DLLDLLURRU RRDDLLDDRR UDLLUUULLD R",
+            // 关卡 13
+            "LUURRUUDLL DDDRRUUDDR RULDLLLUUR RURDLLLDDR RUURULDDDR UULLUU",
+            // 关卡 14
+            "DRLUURDRRU LRURRDLLDD DRRULULUUR RDLDLLLLDD RULURRLLUU RDLDR",
+            // 关卡 15
+            "UULUURRDLD DDLURUUULL DRLLDDRRDR ULULUURDUR RDLRRDDLLU LRDDLURURU ULDULLDRRU RD",
+            // 关卡 16
+            "LLUULUURLD DRULUUURRD LULDDDUURR RRRDDLLLLL LRRDLLRRDD RRUURULLLL UURRDLULDD RDLRDDRRRU ULULLULDUU RRRRRDDLLL\n" +
+                    "L\n",
+            // 关卡 17
+            "LUULUURRRD DRDLUUULLD RURDDRDDRR ULDLUDLUDL LURRLLULUR URRDDUULLD RURD",
+            // 关卡 18
+            "RUULUURUUL DLLULLDRRR RURDLDDDRD DLULLUUUDD DRRUUUULLU LLDRLDRURR RDDDDLLURD RUUUDDLLUU LURDLLLDDR RRRDRUU",
+            // 关卡 19
+            "RUURUDLDDR RURRUULLRR DDLLDLLULL UDRRULUURU RRDLULLDDD DLLURDRUUU DDLLURDRUD RRUURULDDD LDDRRURRUU LLRRDDLLDL\n" +
+                    "LUURUUDRRR DDLURULLRD DLDLLUURU",
+            // 关卡 20
+            "RUULURUULL LDLDDRUULD DDDRUUURRU DDRUUDDDDL ULUDLDLUUU RRDRUDDRUU",
+            //21
+            "UURDRRDRRU UURULDDDDL LURDRUUUDD LLLLLDDRUL URRRRDRUUD DRUUULLRDD LLLLDDRULU RRRDRUURUL RDDDDRRULD LUUUDDRRUL\n" +
+                    "LDLUU",
+            //22
+            "ULUULLULLL UURRDURDRR DDDRDDLLUL LDLUUUDDRR RURULDRRDL LLLDLUU"
+    );
+
+    // 缓存已解析的答案，避免重复转换
+    private static final List<List<KeyCode>> PARSED_SOLUTIONS = new ArrayList<>();
+
+    // 静态代码块，在类加载时自动执行一次，用于解析所有字符串答案
+    static {
+        for (String s : SOLUTIONS_STR) {
+            if (s == null) {
+                PARSED_SOLUTIONS.add(null);
+            } else {
+                PARSED_SOLUTIONS.add(parseSolution(s));
+            }
+        }
+    }
+
+    /**
+     * 将代表答案的字符串转换为KeyCode列表。
+     * @param solutionString 包含 U, D, L, R 和空格的字符串
+     * @return KeyCode指令列表
+     */
+    private static List<KeyCode> parseSolution(String solutionString) {
+        // 1. 使用正则表达式移除所有非UDLR的字符（如空格、换行符）
+        // 2. 将干净的字符串分割成单个字符的数组
+        // 3. 使用Stream API将每个字符映射到对应的KeyCode
+        // 4. 过滤掉任何可能产生的null值
+        // 5. 将结果收集到一个列表中
+        return Arrays.stream(solutionString.replaceAll("[^UDLR]", "").split(""))
+                .map(ch -> {
+                    switch (ch) {
+                        case "U": return KeyCode.UP;
+                        case "D": return KeyCode.DOWN;
+                        case "L": return KeyCode.LEFT;
+                        case "R": return KeyCode.RIGHT;
+                        default: return null; // 理论上不会发生
+                    }
+                })
+                .filter(Objects::nonNull)
+                .collect(Collectors.toList());
+    }
+
+    /**
+     * 根据关卡索引获取预设的解法。
+     * @param levelIndex 关卡的索引 (从0开始)
+     * @return 如果存在解法，则返回 KeyCode 列表；否则返回 null。
+     */
+    public static List<KeyCode> getSolution(int levelIndex) {
+        if (levelIndex >= 0 && levelIndex < PARSED_SOLUTIONS.size()) {
+            return PARSED_SOLUTIONS.get(levelIndex);
+        }
+        return null;
+    }
+}
